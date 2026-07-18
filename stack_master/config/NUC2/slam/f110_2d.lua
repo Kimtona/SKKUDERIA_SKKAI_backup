@@ -34,7 +34,7 @@ MAP_BUILDER.use_trajectory_builder_2d = true
 MAP_BUILDER.use_trajectory_builder_3d = false
 MAP_BUILDER.num_background_threads = 3.0
 TRAJECTORY_BUILDER_2D.use_imu_data = false
-TRAJECTORY_BUILDER_2D.max_range = 25.0
+TRAJECTORY_BUILDER_2D.max_range = 9.0 -- GL-5 spec: 9 m
 TRAJECTORY_BUILDER_2D.min_range = 0.1
 
 -- might be able to optimize these parameters

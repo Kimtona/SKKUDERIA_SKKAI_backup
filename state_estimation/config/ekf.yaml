@@ -4,7 +4,7 @@ ekf_filter_node:
 # The frequency, in Hz, at which the filter will output a position estimate. Note that the filter will not begin
 # computation until it receives at least one message from one of the inputs. It will then run continuously at the
 # frequency specified here, regardless of whether it receives more measurements. Defaults to 30 if unspecified.
-        frequency: 50.0
+        frequency: 40.0
 
 # The period, in seconds, after which we consider a sensor to have timed out. In this event, we carry out a predict
 # cycle on the EKF without correcting it. This parameter can be thought of as the minimum frequency with which the
@@ -85,8 +85,15 @@ ekf_filter_node:
 # do not provide some of the state variables estimated by the filter. For example, a TwistWithCovarianceStamped message
 # has no pose information, so the first six values would be meaningless in that case. Each vector defaults to all false
 # if unspecified, effectively making this parameter required for each sensor.
+        # yaw (index 5) = false: do NOT fuse the wheel-odom absolute yaw. It comes from
+        # the VESC steering bicycle model (use_servo_cmd_to_calc_angular_velocity) and
+        # UNDER-ROTATES (measured 596 deg vs the IMU gyro's 921 deg over a lap), which
+        # pinned the EKF heading to a wrong yaw -> odom loop didn't close -> doubled
+        # walls in mapping / drift in localization. Heading now comes purely from the
+        # IMU yaw RATE (imu0 index 11); wheel odom contributes only forward velocity
+        # (vx, index 6). Standard robot_localization pattern. Reversible: set back to true.
         odom0_config: [false, false, false,
-                      false, false, true,
+                      false, false, false,
                       true, false, false,
                       false, false, false,
                       false, false, false]
@@ -161,8 +168,13 @@ ekf_filter_node:
         # twist0_nodelay: false
 
         imu0: sensors/imu/raw
+        # yaw (index 5) = false: do NOT fuse the VESC AHRS absolute yaw. It has no
+        # magnetometer (drifts) and its reference convention disagrees with the mount,
+        # so fusing it fought the wheel-odom yaw and rotated the heading. Wheel odom
+        # (odom0 index 5) is now the single absolute-yaw source; the IMU contributes
+        # only yaw RATE (vyaw, index 11), which is immune to the mount yaw offset.
         imu0_config: [false, false, false,
-                      false,  false,  true,
+                      false,  false,  false,
                       false, false, false,
                       false,  false,  true,
                       false,  false,  false]

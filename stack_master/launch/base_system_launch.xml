@@ -4,6 +4,7 @@
   <arg name="map_name" default="latest" description="Map name in stack_master/maps" />
   <arg name="sim" default="False" description="True/False if you want to run simulation" />
   <arg name="loc_algorithm" default="slam" description="'slam' / 'synpf' to switch localisation algorithm" />
+  <arg name="rviz" default="False" description="Open RViz with the race view" />
 
   <!-- Note: This is merely the share path (read-only) as the base_system
     is not expected to modify maps in any way. -->
@@ -64,5 +65,9 @@
 
   <!-- launch lap analyser -->
   <node pkg="lap_analyser" name="lap_analyser" exec="lap_analyser" output="screen" />
+
+  <!-- RViz race view -->
+  <node if="$(var rviz)" pkg="rviz2" exec="rviz2" name="rviz2"
+    args="-d $(find-pkg-share stack_master)/viz/head_to_head.rviz" output="log" />
 
 </launch>

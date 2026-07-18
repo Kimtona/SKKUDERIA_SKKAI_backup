@@ -151,9 +151,16 @@ class MappingNode(Node):
             return
         self.get_logger().info(f"Saving Map '{self.map_name}'...")
 
+        if not self.pose_valid:
+            # /car_state/odom never arrived; save anyway rather than crash mid-click.
+            self.get_logger().warn(
+                "No /car_state/odom received - saving map with initial_pose (0,0,0). "
+                "Set the initial pose manually when localizing.")
+            self.initial_position = (0.0, 0.0, 0.0)
+
         _check_default_map(self.map_name, self.map_dir, get_data_path('maps/backup'), self.get_logger().warn)
-        os.makedirs(self.map_dir)
- 
+        os.makedirs(self.map_dir, exist_ok=True)
+
         self.get_logger().info(f'Successfully created the folder {self.map_dir}')
         self.filter_map_occupancy_grid()
         _save_map_to_directory(self.map_dir, self.map_name, self.filtered_map, self.map_resolution, self.map_origin.x, self.map_origin.y, self.initial_position)

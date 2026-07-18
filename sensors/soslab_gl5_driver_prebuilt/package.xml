@@ -1,0 +1,23 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>soslab_gl5_driver</name>
+  <version>1.0.0</version>
+  <description>
+    SOSLAB GL-5 lidar driver, packaged as a PREBUILT aarch64 binary.
+    The original source was lost; this wraps the last known-good build
+    (RUNPATH patched to $ORIGIN so libLidar_x64_release.so ships alongside).
+    Publishes /soslab/pointcloud (sensor_msgs/PointCloud2, frame 'laser').
+  </description>
+  <maintainer email="hwany01@g.skku.edu">SKKUDERIA</maintainer>
+  <license>Proprietary (SOSLAB SDK)</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <exec_depend>rclcpp</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>
