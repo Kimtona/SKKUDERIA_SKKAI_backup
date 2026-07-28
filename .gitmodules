@@ -1,7 +1,7 @@
 [submodule "base_system/f1tenth_system"]
 	path = base_system/f1tenth_system
-	url = https://github.com/ForzaETH/f1tenth_system.git
-	branch = humble-devel
+	url = git@github.com:churrosboy/f1tenth_system.git
+	branch = main
 [submodule "base_system/f110_simulator/f1tenth_gym"]
 	path = base_system/f110_simulator/f1tenth_gym
 	url = https://github.com/ForzaETH/f1tenth_gym.git
