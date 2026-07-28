@@ -65,8 +65,32 @@ export DISPLAY=localhost:10.0
 6. Enjoy a terminal with GUI forwarding!
 
 ## Mac Support
-If you are using a macbook X-Forwarding does not work. However you can use [this](https://github.com/ETH-PBL/remote-novnc) to setup a vnc session. You can then use your macbook as screen for the car by running:
+XQuartz can display ordinary X11 applications, but its GLX implementation does
+not provide the OpenGL context required by RViz 2. Use the official
+[ETH-PBL remote-novnc](https://github.com/ETH-PBL/remote-novnc) workflow
+instead. It runs a Linux Xvfb display and exposes it through noVNC.
 
+Clone and set up the helper next to this repository:
+
+```bash
+cd ..
+git clone https://github.com/ETH-PBL/remote-novnc.git
+cd remote-novnc
+./setup_vnc.sh
 ```
-export DISPLAY=<YOUR_IP>:501
+
+Start it before the race-stack DevContainer:
+
+```bash
+cd ../remote-novnc
+./start_vnc.sh
 ```
+
+Keep that terminal open and open the noVNC URL printed by the script. On
+macOS, `start_vnc.sh` starts its own Docker container. Its X display number and
+published ports are derived from the macOS user ID. For example, UID 501 uses
+X display `:501`, X11 TCP port 6501, VNC port 10501, and noVNC port 20501.
+
+The `arm` service in `docker-compose.yaml` connects to that display through
+`host.docker.internal:${HOST_UID}` and forces Mesa software rendering
+(LLVMpipe). No XQuartz `DISPLAY` export is needed.

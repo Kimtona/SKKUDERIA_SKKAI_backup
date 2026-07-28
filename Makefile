@@ -21,7 +21,7 @@ help: ## Show available targets and their descriptions
 	@grep -E '^[a-zA-Z_-]+:.*?## ' Makefile | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
 
 # HIGH-LEVEL TARGETS
-default_setup: export_env edit-json-arm check-registry setup_cache build ## Setup the race_stack on a new computer, with the simulator
+default_setup: export_env edit-json-arm setup_cache build ## Setup the race_stack on a new computer, with the simulator
 # LEAF TARGETS
 export_env:
 	@echo "Exporting environment variables to .env file..."
@@ -62,8 +62,8 @@ launch:
 		export SERVICE_NAME="jet"; \
 	elif [ "$$(uname -m)" = "arm64" ]; then \
 		export SERVICE_NAME="arm"; \
-		export DISPLAY=:501; \
-		echo "Setting DISPLAY to :501 for Apple Silicon..."; \
+		export DISPLAY=host.docker.internal:$$(id -u); \
+		echo "Setting DISPLAY to $$DISPLAY for remote-novnc..."; \
 	else \
 		echo "Unsupported architecture: $$(uname -m)"; \
 		exit 1; \
@@ -73,7 +73,7 @@ launch:
 edit-json-arm:
 	@echo "If on an ARM based device, please edit devcontainer.json as follows"
 	@echo "Edit the service and runServices to end with arm and not x86"
-	@echo "Change display from '\$${localEnv:DISPLAY}' to ':501'"
+	@echo "The arm service configures remote-novnc display forwarding automatically"
 	@printf "Have you updated it if needed?  (y/N): " && read ans && [ "$$ans" = "y" -o "$$ans" = "Y" ] || (echo "Aborted."; exit 1)
 	@echo "✅ Proceeding with build..."
 
