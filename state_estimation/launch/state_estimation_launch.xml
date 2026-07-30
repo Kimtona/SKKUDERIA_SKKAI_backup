@@ -16,7 +16,7 @@
     <!-- Crawl back to the source maps dir (same trick as mapping_launch): maps are
          saved there at runtime, so reading via find-pkg-share would require a
          rebuild after every mapping session. -->
-    <let name="map_path" value="$(find-pkg-prefix stack_master)/../../src/race_stack/stack_master/maps/$(var map_name)" />
+    <let name="map_path" value="$(find-pkg-prefix stack_master)/../../src/SKKUDERIA_SKKAI/stack_master/maps/$(var map_name)" />
 
     <!-- IF SLAM LOC ONLY -->
     <group unless="$(var mapping_bool)">

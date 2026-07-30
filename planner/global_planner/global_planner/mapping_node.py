@@ -9,7 +9,8 @@ import yaml
 import cv2
 import numpy as np
 import matplotlib
-matplotlib.use('TkAgg')
+# TkAgg needs an X display; fall back to Agg so the node can run over SSH.
+matplotlib.use('TkAgg' if os.environ.get('DISPLAY') else 'Agg')
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Button
 
@@ -192,6 +193,8 @@ class MappingNode(Node):
             once=True,
         )
         try:
+            if matplotlib.get_backend().lower() == 'agg':
+                raise RuntimeError("no display available (headless session)")
             if self.fig is None:
                 self.fig, (self.ax1, self.axfinish) = plt.subplots(2, 1, gridspec_kw={'height_ratios': [5, 1]})
             self.fig.suptitle('Filtered map')

@@ -17,9 +17,13 @@ pc_to_scan:
     min_height: -10.0
     max_height:  10.0
     # GL-5 spec: 270 deg FoV, 0.18 deg / beam, 40 Hz, 9 m range
-    # Widened to +/- pi to safely include edge beams (extra bins fill with inf)
-    angle_min: -3.14
-    angle_max:  3.14
+    # Bounds MUST match the real 270 deg FoV (+/- 135 deg = +/- 2.356 rad).
+    # Do NOT widen to +/- pi: the 90 deg blind sector then fills with inf, and
+    # cartographer treats inf as a MISS -- it carves free space out to
+    # missing_data_ray_length (5 m default) on every scan, punching rays
+    # straight through the track boundary behind the car.
+    angle_min: -2.356
+    angle_max:  2.356
     angle_increment: 0.00314
     scan_time: 0.025
     range_min: 0.1
