@@ -14,7 +14,7 @@ def get_data_path(subpath=''):
     """
     Helper function to get an absolute path to the specified (relative) path within the data folder.
     """
-    return Path(get_package_share_directory('stack_master')).parents[3]/'src/SKKUDERIA_SKKAI/stack_master'/subpath
+    return Path(get_package_share_directory('stack_master')).parents[3]/'src/stack_master'/subpath
 
 class OvertakingSectorSlicer(Node):
     """

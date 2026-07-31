@@ -10,7 +10,7 @@
     <let name="vesc_config" value="$(find-pkg-share stack_master)/config/$(var racecar_version)/vesc.yaml" />
 
     <!-- Crawl backwards to find the maps in the src folder. -->
-    <let name="map_src_path" value="$(find-pkg-prefix stack_master)/../../src/SKKUDERIA_SKKAI/stack_master/maps/$(var map_name)" />
+    <let name="map_src_path" value="$(find-pkg-prefix stack_master)/../../src/stack_master/maps/$(var map_name)" />
 
     <!-- ON PHYSICAL SYSTEM -->
     <node pkg="global_planner" exec="mapping_node" name="mapping_node" output="screen" emulate_tty="true">

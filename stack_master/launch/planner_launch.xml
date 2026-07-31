@@ -1,6 +1,6 @@
 <launch>
     <arg name="map_name" description="Name of the map to be created" default="latest"/>
-    <let name="map_src_path" value="$(find-pkg-prefix stack_master)/../../src/SKKUDERIA_SKKAI/stack_master/maps/$(var map_name)" />
+    <let name="map_src_path" value="$(find-pkg-prefix stack_master)/../../src/stack_master/maps/$(var map_name)" />
 
     <node pkg="global_planner" exec="global_planner" name="global_planner" output="screen">
         <param from="$(find-pkg-share stack_master)/config/global_planner/global_planner_params.yaml" />
