@@ -4,6 +4,8 @@
     <arg name="overtake_mode" default="spliner" /> <!--  spliner / graph_based -->
     <arg name="ctrl_algo" default="MAP"/> <!-- MAP / PP -->
     <arg name="measure" default="False" />
+    <arg name="perception" default="True"
+        description="True: run real perception (detect+track). False: use opponent_publisher's dummy obstacle instead, e.g. to test overtaking in sim without a second car." />
 
     <!-- launch controller manager -->
     <include file="$(find-pkg-share controller)/launch/controller_launch.xml">
@@ -23,8 +25,20 @@
     </group>
 
     <!-- PERCEPTION -->
-    <include file="$(find-pkg-share perception)/launch/perception_launch.xml">
-        <arg name="param_file" value="$(find-pkg-share stack_master)/config/opponent_tracker_params.yaml" />
-    </include> 
-    
+    <group if="$(var perception)">
+        <include file="$(find-pkg-share perception)/launch/perception_launch.xml">
+            <arg name="param_file" value="$(find-pkg-share stack_master)/config/opponent_tracker_params.yaml" />
+        </include>
+    </group>
+
+    <!-- DUMMY OBSTACLE (used instead of perception when perception:=False) -->
+    <!-- type:=virtual is required here: type:=lidar (the package default) only paints the
+         obstacle into /map for a running perception pipeline to detect, it does not publish
+         /perception/obstacles itself, which is what we need with perception disabled. -->
+    <group unless="$(var perception)">
+        <include file="$(find-pkg-share opponent_publisher)/launch/opponent_publisher_launch.xml">
+            <arg name="type" value="virtual" />
+        </include>
+    </group>
+
 </launch>

@@ -42,7 +42,17 @@ class StateMachine(Node):
         self.add_on_set_parameters_callback(self.params.parameters_callback)
         
         # SUBSCRIPTIONS
-        if self.params.test_on_car:
+        # `test_on_car` in state_machine_params.yaml is hardcoded True, so we additionally check
+        # the global `sim` param to avoid waiting on a VESC topic that never publishes in simulation.
+        sim_client = self.create_client(GetParameters, '/global_parameters/get_parameters')
+        sim_client.wait_for_service()
+        sim_request = GetParameters.Request()
+        sim_request.names = ['sim']
+        sim_future = sim_client.call_async(sim_request)
+        rclpy.spin_until_future_complete(self, sim_future)
+        self.sim = sim_future.result().values[0].bool_value
+
+        if self.params.test_on_car and not self.sim:
             self.battery_sub = self.create_subscription(VescStateStamped, "/vesc/sensors/core", self.battery_cb, 10)
         else:
             self.battery_level = self.params.volt_threshold + 1
