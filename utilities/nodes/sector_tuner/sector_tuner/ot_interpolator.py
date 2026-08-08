@@ -1,6 +1,7 @@
 import yaml
 import rclpy
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from f110_msgs.msg import Wpnt, WpntArray
 import numpy as np
 from ament_index_python.packages import get_package_share_directory
@@ -34,9 +35,24 @@ class OvertakingInterpolator(Node):
         # get initial scaling
         self.sectors_params=self.parameters_to_dict()
         self.n_sectors = self.sectors_params['n_sectors']
-        self.get_logger().info(str(self.sectors_params))
         self.yeet_factor = self.sectors_params['yeet_factor']
         self.spline_len = int(self.sectors_params['spline_len'])
+
+        # Sim-only convenience: the per-map ot_sectors.yaml ships with every sector's
+        # ot_flag defaulted to false (a safety gate for real hardware, where an untested
+        # sector's overtake maneuver could send the car into a wall). In simulation there's
+        # no such risk, so base_system_launch.xml sets this true whenever sim:=True to skip
+        # the manual per-sector rqt_reconfigure step. The map file itself is left untouched.
+        self.declare_parameter('force_all_ot_true', False)
+        if self.get_parameter('force_all_ot_true').value:
+            force_params = []
+            for i in range(self.n_sectors):
+                self.sectors_params[f'Overtaking_sector{i}']['ot_flag'] = True
+                force_params.append(Parameter(f'Overtaking_sector{i}.ot_flag', Parameter.Type.BOOL, True))
+            self.set_parameters(force_params)
+            self.get_logger().info(f'[SIM] force_all_ot_true is set: enabled all {self.n_sectors} overtaking sectors by default.')
+
+        self.get_logger().info(str(self.sectors_params))
 
         # SUBSCRIBE
         self.glb_wpnts_name = "/global_waypoints_scaled"

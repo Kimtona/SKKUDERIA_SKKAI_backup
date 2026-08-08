@@ -112,7 +112,7 @@ Visualization Manager:
       Use Timestamp: false
       Value: true
     - Class: rviz_default_plugins/Marker
-      Enabled: false
+      Enabled: true
       Name: State
       Namespaces:
         {}
@@ -123,7 +123,16 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /state_marker
-      Value: false
+      Value: true
+    - Class: rviz_default_plugins/InteractiveMarkers
+      Enable Transparency: true
+      Enabled: true
+      Interactive Markers Namespace: /sim_obstacle_controls
+      Name: Clear Obstacles Button
+      Show Axes: false
+      Show Descriptions: true
+      Show Visual Aids: false
+      Value: true
     - Class: rviz_default_plugins/MarkerArray
       Enabled: true
       Name: Dummy Obstacle (perception:=False)

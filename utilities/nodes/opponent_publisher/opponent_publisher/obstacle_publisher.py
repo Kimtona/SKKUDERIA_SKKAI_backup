@@ -35,7 +35,10 @@ class ObstaclePublisher(Node):
                 ('constant_speed', False),
                 ('trajectory', "min_curv"),
                 ('start_s', 0.0),
-                ('type', 'lidar')
+                # ROS1's obstacle_publisher always injected straight into
+                # /perception/obstacles ("virtual" here) -- there was no map-painting
+                # mode. "lidar" is a ROS2-only addition with no ROS1 equivalent.
+                ('type', 'virtual')
         ])
         
         self.speed_scaler = self.get_parameter('speed_scaler').value
@@ -185,12 +188,14 @@ class ObstaclePublisher(Node):
         return rc
 
     
-    def add_lidar_obs(self,ind):
+    def _paint_lidar_cell(self, ind, value):
         '''
-        Adds an Obstacle at a desired index in the map. The individual pixels in the map are shaped in a square.
-        
+        Sets a square block of cells (centered on ind) to value, without publishing.
+        Used to both paint (value=100) and clear (value=0) a lidar obstacle cell.
+
         Args:
-            ind(int): index, where the obstacle should be added on the selected trajectory.
+            ind(int): index, where the obstacle should be painted/cleared on the selected trajectory.
+            value(int): occupancy value to write (100=occupied, 0=free).
         '''
         rc = self.ind_2_rc(ind)
         for i in range (-self.obstacle_size,self.obstacle_size):
@@ -198,26 +203,7 @@ class ObstaclePublisher(Node):
                 current_r = rc[0]+i
                 current_c = rc[1]+j
                 current_ind = self.rc_2_ind(current_r,current_c)
-                self.current_map.data[current_ind] = 100
-        
-        self.pub_map.publish(self.current_map)
-                
-    def clear_lidar_obs(self,ind):
-        '''
-        Clears an Obstacle at a desired index in the map. The individual pixels in the map are shaped in a square.
-        
-        Args:
-            ind(int): index, where the obstacle should be cleared on the selected trajectory.
-        '''
-        rc = self.ind_2_rc(ind)
-        for i in range (-self.obstacle_size,self.obstacle_size):
-            for j in range (-self.obstacle_size,self.obstacle_size):
-                current_r = rc[0]+i
-                current_c = rc[1]+j
-                current_ind = self.rc_2_ind(current_r,current_c)
-                self.current_map.data[current_ind] = 0
-                
-        self.pub_map.publish(self.current_map)
+                self.current_map.data[current_ind] = value
     
    
     
@@ -308,22 +294,24 @@ class ObstaclePublisher(Node):
         obstacle_msg.obstacles.append(self.dynamic_obstacle)
         
         if self.opp_type == "lidar":
-            for obs in obstacle_msg.obstacles:    
+            # Paint the new cell and clear the old one on the local buffer first, and
+            # publish the whole occupancy grid only once per tick (was twice, at 100Hz,
+            # which was heavy enough to visibly stall the sim's physics/drive loop).
+            for obs in obstacle_msg.obstacles:
                 obstacle_xy = self.converter.get_cartesian(obs.s_center, obs.d_center)
                 x = obstacle_xy[0]
                 y = obstacle_xy[1]
                 rc_add = self.coord_2_cell_rc(x,y)
                 ind_add = self.rc_2_ind(rc_add[0],rc_add[1])
-                
-                if self.last_ind != None:
-                    self.clear_lidar_obs(self.last_ind)
+
+                if self.last_ind is not None:
+                    self._paint_lidar_cell(self.last_ind, value=0)
                 self.last_ind = ind_add
-                
-                self.add_lidar_obs(ind_add)
-               
-                
-                
-        elif self.opp_type == "virtual":     
+
+                self._paint_lidar_cell(ind_add, value=100)
+            self.pub_map.publish(self.current_map)
+
+        elif self.opp_type == "virtual":
             self.publish_obstacle_cartesian(obstacle_msg.obstacles)
             self.obstacle_pub.publish(obstacle_msg)
         
