@@ -43,7 +43,10 @@ TRAJECTORY_BUILDER.pure_localization_trimmer = {
 -- might be able to optimize these parameters
 -- see: http://google-cartographer-ros.readthedocs.io/en/latest/tuning.html
 TRAJECTORY_BUILDER_2D.submaps.num_range_data = 80
-POSE_GRAPH.optimize_every_n_nodes = 5
+-- POSE_GRAPH.optimize_every_n_nodes = 5
+-- 5 caused a ~200 ms TF stall every 1.5-3 s of driving (pose-graph optimization);
+-- 20 makes stalls 4x rarer. In pure localization the scan matcher still tracks continuously.
+POSE_GRAPH.optimize_every_n_nodes = 20
 POSE_GRAPH.global_sampling_ratio = 0.05
 POSE_GRAPH.constraint_builder.sampling_ratio = 0.05
 

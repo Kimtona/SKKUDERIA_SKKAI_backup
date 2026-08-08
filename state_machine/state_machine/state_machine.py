@@ -455,6 +455,18 @@ class StateMachine(Node):
         loc_wpnts.header.stamp = self.get_clock().now().to_msg()
         loc_wpnts.header.frame_id = "map"
 
+        # publish the real waypoints unconditionally (moved up from below the marker loop)
+        if len(loc_wpnts.wpnts) == 0:
+            self.get_logger().warn("No local waypoints published...")
+        else:
+            self.loc_wpnt_pub.publish(loc_wpnts)
+
+        # markers are rviz-only: skip building them entirely when nobody subscribes,
+        # and throttle to every 8th cycle (40 Hz -> 5 Hz) when rviz is connected
+        self._viz_cycle = getattr(self, "_viz_cycle", 0) + 1
+        if self.vis_loc_wpnt_pub.get_subscription_count() == 0 or self._viz_cycle % 8 != 0:
+            return
+
         for i, wpnt in enumerate(loc_wpnts.wpnts):
             mrk = Marker()
             mrk.header.frame_id = "map"
@@ -474,10 +486,10 @@ class StateMachine(Node):
 
         # ...
 
-        if len(loc_wpnts.wpnts) == 0:
-            self.get_logger().warn("No local waypoints published...")
-        else:
-            self.loc_wpnt_pub.publish(loc_wpnts)
+        # if len(loc_wpnts.wpnts) == 0:
+        #     self.get_logger().warn("No local waypoints published...")
+        # else:
+        #     self.loc_wpnt_pub.publish(loc_wpnts)
 
         self.vis_loc_wpnt_pub.publish(loc_markers)
     

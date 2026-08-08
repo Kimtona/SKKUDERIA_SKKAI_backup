@@ -2,7 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, QoSDurabilityPolicy, HistoryPolicy
+from rclpy.qos import QoSProfile, QoSDurabilityPolicy, HistoryPolicy, qos_profile_sensor_data
 from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, FloatingPointRange, IntegerRange, SetParametersResult
 from rclpy.parameter import Parameter
@@ -107,7 +107,7 @@ class Detect(Node):
         # --- Subscribers ---
         msgs_cb_group = ReentrantCallbackGroup()
         self.scan_sub = self.create_subscription(
-            LaserScan, '/scan', self.laserCb, 10, callback_group=msgs_cb_group)
+            LaserScan, '/scan', self.laserCb, qos_profile_sensor_data, callback_group=msgs_cb_group)
         self.glob_wpts_sub = self.create_subscription(
             WpntArray, '/global_waypoints', self.pathCb, 10, callback_group=msgs_cb_group)
         self.car_state_sub = self.create_subscription(
@@ -123,8 +123,10 @@ class Detect(Node):
         self.obstacles_marker_pub = self.create_publisher(
             MarkerArray, '/perception/obstacles_markers_new', 5)
 
-        self.declare_parameter("rate", 40, descriptor=ParameterDescriptor(
-            description="rate at which the node is running"))
+        # self.declare_parameter("rate", 40, descriptor=ParameterDescriptor(
+        #     description="rate at which the node is running"))
+        self.declare_parameter("rate", 20, descriptor=ParameterDescriptor(
+            description="rate at which the node is running"))  # 40->20: node only achieved 19.3 Hz; params yaml is ignored (FQN mismatch) so this default rules
         self.declare_parameter("lambda", 10, descriptor=ParameterDescriptor(
             description="minimum reliables detection angle in degrees"))
         self.declare_parameter("sigma", 0.03, descriptor=ParameterDescriptor(
@@ -144,7 +146,8 @@ class Detect(Node):
 
         # --- dyn params ---
         self.max_obs_size = 0.5
-        self.min_obs_size = 10
+        # self.min_obs_size = 10
+        self.min_obs_size = 10  # 5 pts ~doubles detection range vs 10 (0.11 m obj: ~7 m)
         self.max_viewing_distance = 9.0
         self.boundaries_inflation = 0.1
         
@@ -177,6 +180,8 @@ class Detect(Node):
 
         # ego car s position
         self.car_s = 0
+        # ego car speed along s, used to speed-scale the TF fallback bound
+        self.car_speed = 0.0
 
         # raw scans from the lidar
         self.scans: LaserScan = LaserScan()
@@ -270,6 +275,7 @@ class Detect(Node):
 
     def carStateCb(self, data: Odometry):
         self.car_s = data.pose.pose.position.x
+        self.car_speed = data.twist.twist.linear.x
     
     def dyn_param_cb(self, params: List[Parameter]):
         """
@@ -330,6 +336,13 @@ class Detect(Node):
         if t is None:
             return []
 
+        # GL-5 publishes inf for out-of-range beams (pointcloud_to_laserscan use_inf: true);
+        # inf/NaN ranges propagate into the frenet converter and crash it ("S is nan").
+        # Replace with 1000.0, NOT 0: zeros create a phantom on-track cluster at the lidar origin.
+        # Kept in a local array: the LaserScan msg setter rejects numpy floats.
+        ranges = np.nan_to_num(np.array(scans.ranges, dtype=np.float32),
+                               nan=1000.0, posinf=1000.0, neginf=1000.0)
+
         # --- initialisation of some utility parameters ---
         l = self.lambda_angle
         d_phi = scans.angle_increment
@@ -341,8 +354,10 @@ class Detect(Node):
 
         angles = np.linspace(scans.angle_min,
                              scans.angle_max, len(scans.ranges))
-        x_laser_frame = (scans.ranges * np.cos(angles)).flatten()
-        y_laser_frame = (scans.ranges * np.sin(angles)).flatten()
+        # x_laser_frame = (scans.ranges * np.cos(angles)).flatten()
+        # y_laser_frame = (scans.ranges * np.sin(angles)).flatten()
+        x_laser_frame = (ranges * np.cos(angles)).flatten()
+        y_laser_frame = (ranges * np.sin(angles)).flatten()
         z_laser_frame = np.zeros(len(scans.ranges))
         # 4xN matrix
         xyz_laser_frame = np.vstack((x_laser_frame, y_laser_frame, z_laser_frame, np.ones(len(scans.ranges))))
@@ -362,23 +377,30 @@ class Detect(Node):
         # method
         # --------------------------------------------------
 
-        first_point: Point2D = (cloudPoints_list[0][0], cloudPoints_list[0][1])
-        objects_pointcloud_list: List[List[Point2D]] = [[first_point]]
-
         div_const = np.sin(d_phi) / np.sin(l - d_phi)
-        for i in range(1, len(cloudPoints_list)):
-            curr_range = self.scans.ranges[i]
-            d_max = curr_range * div_const + 3 * sigma
+        # Vectorized breakpoint segmentation, output-identical to the commented
+        # loop below. numpy releases the GIL during these ops, so the TF listener
+        # thread can keep the buffer fresh (the pure-Python loop starved it and
+        # caused the "extrapolation into the future" lookup failures).
+        # Distance between points does not change in map frame or laser frame.
+        dists = np.linalg.norm(np.diff(xyz_laser_frame[:2, :], axis=1), axis=0)
+        d_max = ranges[1:] * div_const + 3 * sigma
+        break_idx = np.where(dists >= d_max)[0] + 1
+        # But from now onward, we deal with points in map frame.
+        objects_pointcloud_list = [seg.tolist() for seg in np.split(np.transpose(xyz_map[:2, :]), break_idx)]
 
-            # Distance between points does not change in map frame or laser frame.
-            dist_to_next_point = np.linalg.norm(xyz_laser_frame[:2, i] - xyz_laser_frame[:2, i - 1])
-            
-            # But from now onward, we deal with points in map frame.
-            curr_point = (cloudPoints_list[i][0], cloudPoints_list[i][1])
-            if dist_to_next_point < d_max:
-                objects_pointcloud_list[-1].append(curr_point)
-            else:
-                objects_pointcloud_list.append([curr_point])
+        # first_point: Point2D = (cloudPoints_list[0][0], cloudPoints_list[0][1])
+        # objects_pointcloud_list: List[List[Point2D]] = [[first_point]]
+        # for i in range(1, len(cloudPoints_list)):
+        #     # curr_range = self.scans.ranges[i]
+        #     curr_range = ranges[i]
+        #     d_max = curr_range * div_const + 3 * sigma
+        #     dist_to_next_point = np.linalg.norm(xyz_laser_frame[:2, i] - xyz_laser_frame[:2, i - 1])
+        #     curr_point = (cloudPoints_list[i][0], cloudPoints_list[i][1])
+        #     if dist_to_next_point < d_max:
+        #         objects_pointcloud_list[-1].append(curr_point)
+        #     else:
+        #         objects_pointcloud_list.append([curr_point])
 
         # ------------------------------------------------
         # removing point clouds that are too small or too
@@ -651,8 +673,33 @@ class Detect(Node):
                                                         time=self.scans.header.stamp, 
                                                         timeout=rclpy.duration.Duration(seconds=0.03))
         except Exception as e:
-            self.get_logger().warn(f"Could not transform between 'map' and '{scans.header.frame_id}': {e}")
-            transform = None
+            # self.get_logger().warn(f"Could not transform between 'map' and '{scans.header.frame_id}': {e}")
+            # transform = None
+            # Fallback: exact-stamp transform unavailable (TF buffer momentarily stale).
+            # Use the newest buffered transform if it is close enough to the scan stamp.
+            # Speed-scaled bound: accept the stale TF only if the resulting obstacle
+            # position error (age * speed) stays under MAX_FALLBACK_ERR_M, capped at
+            # 0.15 s when standing/slow. E.g. 0.3 m cap -> 150 ms at <=2 m/s, 50 ms at
+            # 6 m/s, 25 ms at 12 m/s.
+            MAX_FALLBACK_ERR_M = 0.3
+            fallback_age_bound = min(0.15, MAX_FALLBACK_ERR_M / max(abs(self.car_speed), 0.1))
+            try:
+                transform = self.tf_buffer.lookup_transform(target_frame='map',
+                                                            source_frame=self.scans.header.frame_id,
+                                                            time=rclpy.time.Time())  # time 0 = latest available
+                age = (rclpy.time.Time.from_msg(self.scans.header.stamp) -
+                       rclpy.time.Time.from_msg(transform.header.stamp)).nanoseconds * 1e-9
+                # if abs(age) < 0.15:
+                if abs(age) < fallback_age_bound:
+                    self.get_logger().warn(f"Exact-stamp TF unavailable, using latest ({age*1000:.0f} ms old): {e}",
+                                           throttle_duration_sec=5.0)
+                else:
+                    self.get_logger().warn(f"Could not transform between 'map' and '{scans.header.frame_id}', "
+                                           f"latest TF is {age*1000:.0f} ms older than scan: {e}")
+                    transform = None
+            except Exception as e2:
+                self.get_logger().warn(f"Could not transform between 'map' and '{scans.header.frame_id}': {e2}")
+                transform = None
 
         objects_pointcloud_list = self.scans2ObsPointCloud(scans=scans, car_s=car_s, t=transform)
         current_obstacles = self.obsPointClouds2obsArray(objects_pointcloud_list)

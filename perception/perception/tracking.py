@@ -14,6 +14,7 @@ from scipy.linalg import block_diag
 
 import rclpy
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, FloatingPointRange, IntegerRange, SetParametersResult
 from rclpy.parameter import Parameter
 
@@ -289,8 +290,10 @@ class StaticDynamic(Node):
                          automatically_declare_parameters_from_overrides=True)  # type: ignore
 
         # ------------ Tunable Parameters ------------
-        self.declare_parameter("rate", 40, descriptor=ParameterDescriptor(
-            description="rate at which the node is running"))
+        # self.declare_parameter("rate", 40, descriptor=ParameterDescriptor(
+        #     description="rate at which the node is running"))
+        self.declare_parameter("rate", 20, descriptor=ParameterDescriptor(
+            description="rate at which the node is running"))  # 40->20 to match detect; sets Kalman dt + loop timer
         self.declare_parameter("P_vs", 0.2, descriptor=ParameterDescriptor(
             description="proportional gain for the vs"))
         self.declare_parameter("P_d", 0.02, descriptor=ParameterDescriptor(
@@ -464,7 +467,7 @@ class StaticDynamic(Node):
         self.cs_odom_sub = self.create_subscription(
             Odometry, '/car_state/odom', self.carStateGlobCallback, 10)
         self.scan_sub = self.create_subscription(
-            LaserScan, '/scan', self.scansCallback, 10)
+            LaserScan, '/scan', self.scansCallback, qos_profile_sensor_data)
 
         # ------------ Publishers ------------
         self.static_dynamic_marker_pub = self.create_publisher(

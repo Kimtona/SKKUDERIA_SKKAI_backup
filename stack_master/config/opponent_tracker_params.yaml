@@ -1,7 +1,8 @@
 perception:
   ros__parameters:
     detect:
-      rate: 40 # rate at which the node is running
+      # rate: 40 # rate at which the node is running
+      rate: 20 # rate at which the node is running (NOTE: this file is currently ignored — key must be /detect FQN, not perception/detect; kept in sync with in-code default)
       lambda: 10 # minimum reliables detection angle in degrees
       sigma: 0.03 # standard deviation of the noise of the lidar ranges in m
       min_2_points_dist: 0.01 # minimum distance between two points
@@ -11,7 +12,8 @@ perception:
       boundaries_inflation: 0.1
 
     tracking:
-      rate: 40 # rate at which the node is running
+      # rate: 40 # rate at which the node is running
+      rate: 20 # rate at which the node is running (kept in sync with in-code default; file currently ignored, see above)
       P_vs: 0.2 # proportional gain for the vs
       P_d: 0.02 # proportional gain for the d
       P_vd: 0.2 # proportional gain for the vd

@@ -2,7 +2,7 @@ controller:
   ros__parameters:
     t_clip_min: 0.8
     t_clip_max: 5.0
-    m_l1: 0.583
+    m_l1: 0.55 #0.583
     q_l1: -0.167
     speed_lookahead: 0.25
     lat_err_coeff: 1.0

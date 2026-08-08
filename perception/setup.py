@@ -24,7 +24,8 @@ setup(
     entry_points={
         'console_scripts': [
             'tracking = perception.tracking:main',
-            'detect = perception.detect:main'
+            'detect = perception.detect:main',
+            'intensity_filter = perception.intensity_filter:main'
         ],
     },
 )

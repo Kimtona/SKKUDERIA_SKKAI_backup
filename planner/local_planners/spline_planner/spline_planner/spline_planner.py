@@ -90,7 +90,7 @@ class ObstacleSpliner(Node):
         self.post_apex_0 = 2.0
         self.post_apex_1 = 3.0
         self.post_apex_2 = 4.0
-        self.evasion_dist = 0.65
+        self.evasion_dist = 0.2
         self.obs_traj_tresh = 0.3
         self.spline_bound_mindist = 0.2
         self.fixed_pred_time = 0.15
@@ -332,8 +332,10 @@ class ObstacleSpliner(Node):
 
             resp = self.converter.get_cartesian([obs.s_center], [obs.d_center])
 
-            marker = self.xy_to_point(resp[0], resp[1], opponent=True)
-            self.pub_propagated.publish(marker)
+            # rviz-only marker: skip when nobody subscribes
+            if self.pub_propagated.get_subscription_count() > 0:
+                marker = self.xy_to_point(resp[0], resp[1], opponent=True)
+                self.pub_propagated.publish(marker)
 
         return obs
 
@@ -385,6 +387,12 @@ class ObstacleSpliner(Node):
         if self.measuring:
             start = time.perf_counter()
 
+        # rviz markers are cosmetic: build/publish only when subscribed, at most 5 Hz (20/4).
+        # self.viz_on is also checked inside do_spline().
+        self._viz_cycle = getattr(self, "_viz_cycle", 0) + 1
+        self.viz_on = (self.mrks_pub.get_subscription_count() > 0
+                       and self._viz_cycle % 4 == 0)
+
         # Sample data
         obs = self.obs
         gb_scaled_wpnts = self.gb_scaled_wpnts.wpnts
@@ -407,7 +415,9 @@ class ObstacleSpliner(Node):
             end = time.perf_counter()
             self.latency_pub.publish(end - start)
         self.evasion_pub.publish(wpnts)
-        self.mrks_pub.publish(mrks)
+        # self.mrks_pub.publish(mrks)
+        if self.viz_on:
+            self.mrks_pub.publish(mrks)
 
     def do_spline(self, obstacles: ObstacleArray, gb_wpnts: WpntArray) -> Tuple[WpntArray, MarkerArray]:
         """
@@ -463,9 +473,13 @@ class ObstacleSpliner(Node):
                 closest_obs, gb_wpnts, gb_idxs)
 
             # Publish the point around which we are splining
-            mrk = self.xy_to_point(
-                x=gb_wpnts[gb_idxs[0]].x_m, y=gb_wpnts[gb_idxs[0]].y_m, opponent=False)
-            self.closest_obs_pub.publish(mrk)
+            # mrk = self.xy_to_point(
+            #     x=gb_wpnts[gb_idxs[0]].x_m, y=gb_wpnts[gb_idxs[0]].y_m, opponent=False)
+            # self.closest_obs_pub.publish(mrk)
+            if self.viz_on and self.closest_obs_pub.get_subscription_count() > 0:
+                mrk = self.xy_to_point(
+                    x=gb_wpnts[gb_idxs[0]].x_m, y=gb_wpnts[gb_idxs[0]].y_m, opponent=False)
+                self.closest_obs_pub.publish(mrk)
 
             # Choose wpnts from global trajectory for splining with velocity
             evasion_points = []
@@ -533,8 +547,11 @@ class ObstacleSpliner(Node):
                     self.xyv_to_wpnts(
                         x=resp[0, i], y=resp[1, i], s=evasion_s[i], d=evasion_d[i], v=vi, wpnts=wpnts)
                 )
-                mrks.markers.append(self.xyv_to_markers(
-                    x=resp[0, i], y=resp[1, i], v=vi, mrks=mrks))
+                # mrks.markers.append(self.xyv_to_markers(
+                #     x=resp[0, i], y=resp[1, i], v=vi, mrks=mrks))
+                if self.viz_on:
+                    mrks.markers.append(self.xyv_to_markers(
+                        x=resp[0, i], y=resp[1, i], v=vi, mrks=mrks))
 
             # Fill the rest of OTWpnts
             wpnts.header.stamp = self.get_clock().now().to_msg()

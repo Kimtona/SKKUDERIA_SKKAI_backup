@@ -4,6 +4,7 @@ import rclpy
 import numpy as np
 from scipy.spatial.transform import Rotation
 from rclpy.node import Node
+from rclpy.qos import qos_profile_sensor_data
 from rclpy.client import Client
 from rcl_interfaces.srv import GetParameters
 
@@ -82,7 +83,8 @@ class Controller(Node):
         self.state_machine_rate = self.get_remote_parameter('state_machine', 'rate_hz')
 
         # variables
-        self.rate = 40
+        # self.rate = 40
+        self.rate = 20  # 40->20: passed as dt into PP/MAP controllers and waypoint-safety timeout, so all scale together
         self.state = "GB_TRACK"
 
         self.LUT_name = self.get_parameter('LU_table').value # name of lookup table
@@ -141,7 +143,7 @@ class Controller(Node):
         self.create_subscription(Odometry,'/car_state/odom',  self.odom_cb, 10) # car speed
         self.create_subscription(PoseStamped,'/car_state/pose',  self.car_state_cb, 10) # car position (x, y, theta)
         self.create_subscription(Odometry, '/car_state/frenet/odom',self.car_state_frenet_cb, 10) # car frenet coordinates
-        self.create_subscription(LaserScan, '/scan', self.scan_cb, 10) # lidar scan
+        self.create_subscription(LaserScan, '/scan', self.scan_cb, qos_profile_sensor_data) # lidar scan
 
         # Block until relevant data is here
         self.wait_for_messages()
@@ -674,7 +676,8 @@ class Controller(Node):
         self.lookahead_pub.publish(lookahead_marker)
 
     def visualize_trailing_opponent(self):
-        if(self.state == "TRAILING" and (self.opponent is not None)):
+        # if(self.state == "TRAILING" and (self.opponent is not None)):
+        if(self.state == "StateType.TRAILING" and (self.opponent is not None)):
             on = True
         else:
             on = False
