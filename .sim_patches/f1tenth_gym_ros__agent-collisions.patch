@@ -1,0 +1,50 @@
+From 92f32bb9f5b13bb9f8d4495271d17947dc2d41fd Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Thu, 13 Aug 2026 04:52:44 +0900
+Subject: [PATCH] Expose agent_collisions as a bridge parameter
+
+Sets RaceCar.agent_collisions from a ROS parameter, default False so
+every existing launch keeps upstream behaviour. Enable per run with
+
+    ros2 launch ... --ros-args -p agent_collisions:=true
+
+or by adding it to config/SIM/sim.yaml under bridge/ros__parameters.
+---
+ f1tenth_gym_ros/gym_bridge.py | 21 +++++++++++++++++++++
+ 1 file changed, 21 insertions(+)
+
+diff --git a/f1tenth_gym_ros/gym_bridge.py b/f1tenth_gym_ros/gym_bridge.py
+index 2796184..6743bdd 100644
+--- a/f1tenth_gym_ros/gym_bridge.py
++++ b/f1tenth_gym_ros/gym_bridge.py
+@@ -119,6 +119,27 @@ class GymBridge(Node):
+             description="Cell radius painted into /map per /clicked_point obstacle"))
+         self.obstacle_size = self.get_parameter('obstacle_size').value
+ 
++        # Off by default, which is upstream f1tenth_gym behaviour: the iTTC check runs
++        # on the map-only scan, so the ego drives through the opponent car with no
++        # effect on its motion -- laps still complete and nothing is logged, so a failed
++        # overtake is invisible. Turning this on makes hitting the opponent stop the car
++        # the way hitting a wall does, at the cost of needing an /initialpose reset after
++        # each one. Left default-off so existing launches behave exactly as before.
++        # has_parameter guard: this node is constructed with
++        # automatically_declare_parameters_from_overrides=True, so passing the
++        # parameter from a launch file, a params file or the command line already
++        # declares it, and declare_parameter() would raise
++        # ParameterAlreadyDeclaredException.
++        if not self.has_parameter('agent_collisions'):
++            self.declare_parameter('agent_collisions', False, descriptor=ParameterDescriptor(
++                type=ParameterType.PARAMETER_BOOL,
++                description="Let collisions with other agents stop the car (non-upstream)"))
++        RaceCar.agent_collisions = self.get_parameter('agent_collisions').value
++        if RaceCar.agent_collisions:
++            self.get_logger().warn(
++                'agent_collisions enabled: hitting the opponent will stop the car '
++                '(upstream f1tenth_gym would drive through it).')
++
+         # check num_agents
+         num_agents = self.get_parameter('num_agent').value
+         if num_agents < 1 or num_agents > 2:
+-- 
+2.50.1 (Apple Git-155)
+

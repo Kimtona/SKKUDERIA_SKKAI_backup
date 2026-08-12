@@ -19,6 +19,8 @@ Placing a static obstacle by clicking **Publish Point** in RViz.
 |---|---|
 | `f1tenth_gym__reactive-map.patch` | `ScanSimulator2D.update_map_from_occupancy_grid()` |
 | `f1tenth_gym_ros__reactive-map.patch` | `/map` subscribe + re-publish, `/clicked_point` obstacle toggle, `/clear_sim_obstacles` |
+| `f1tenth_gym__agent-collisions.patch` | `RaceCar.agent_collisions` — optionally let hitting another car stop you |
+| `f1tenth_gym_ros__agent-collisions.patch` | `agent_collisions` parameter on the bridge |
 
 Both halves are required. `gym_bridge` fixes the scan simulator's map at
 `gym.make()` time and never re-reads it, so painting `/map` alone (which is what
@@ -52,6 +54,50 @@ been published at least once. Until then the scan is frozen at its initial value
 and the map updates silently have no visible effect — which looks exactly like
 the feature being broken. Running the controller (head_to_head) and
 `opponent_driver` satisfies both.
+
+## Agent collisions
+
+Upstream `update_scan()` runs the iTTC collision check on the map-only scan and
+only then ray casts the other agents in, so **a car drives straight through
+another car with no effect on its motion**. In simulation that makes a failed
+overtake invisible: laps still complete, nothing is logged, and only measuring
+centre-to-centre distance reveals it. That is why the avoidance checks in
+`measure_full.py` are geometric and must stay that way — with collisions off,
+the simulator will never report a bad overtake.
+
+`agent_collisions` on the `bridge` node flips the order so the check sees the
+other agents. **Default false**, i.e. upstream behaviour, so no existing launch
+changes. The disabled branch keeps the original call order verbatim rather than
+assuming `ray_cast_agents` leaves its input untouched.
+
+```bash
+ros2 run f1tenth_gym_ros gym_bridge --ros-args ... -p agent_collisions:=true
+```
+
+or add `agent_collisions: true` under `bridge/ros__parameters` in
+`config/SIM/sim.yaml`. It is read once at startup.
+
+Enabling it means a car that hits the opponent stays stopped until an
+`/initialpose` reset, which makes repeated runs more work — that is the reason
+it is opt-in rather than on.
+
+Verified by driving the ego down a straight stretch of hangar_1905_v0 (s = 11.1,
+curvature 0.0005 rad/m) into a parked opponent at y = 10.196, with the controller
+stopped and `/drive` published directly:
+
+| | ego trajectory |
+|---|---|
+| `false` | 7.70 -> 8.79 -> **10.22 (straight through)** -> 11.73 -> ... -> 20.48, speed held at 1.5 |
+| `true`  | 7.70 -> 8.73 -> **stops at 9.735**, speed 0.000 thereafter |
+
+A control run with the opponent moved away covered the same 12.4 m without
+stopping, confirming the stop is the opponent and not a wall.
+
+**Watch out when testing this by hand:** `gym_bridge` keeps the last commanded
+speed, so resetting with a stale non-zero `/drive` sends the car off the instant
+it is placed. It then hits a wall, latches `in_collision`, and ignores every later
+command — which looks exactly like this feature misbehaving. Command zero first,
+then reset.
 
 ## Relation to the preserved patch
 

@@ -1,0 +1,73 @@
+From 72c64eb367238f7278c6267ec0ec5c54889b664b Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Thu, 13 Aug 2026 04:52:37 +0900
+Subject: [PATCH] Optionally let agent-agent collisions stop the car
+
+Upstream update_scan() runs the iTTC check on the map-only scan and only
+then ray casts other agents in, so a car drives straight through another
+agent with no effect on its motion. In simulation that makes a failed
+overtake invisible: laps still complete, nothing is logged, and only
+measuring centre-to-centre distance reveals it.
+
+RaceCar.agent_collisions (default False) flips the order so the check
+sees the other agents. The disabled branch keeps the original call order
+verbatim rather than relying on ray_cast_agents leaving its input
+untouched, so upstream behaviour is preserved exactly.
+---
+ gym/f110_gym/envs/base_classes.py | 26 ++++++++++++++++++++------
+ 1 file changed, 20 insertions(+), 6 deletions(-)
+
+diff --git a/gym/f110_gym/envs/base_classes.py b/gym/f110_gym/envs/base_classes.py
+index 6725018..51b987a 100644
+--- a/gym/f110_gym/envs/base_classes.py
++++ b/gym/f110_gym/envs/base_classes.py
+@@ -66,6 +66,13 @@ class RaceCar(object):
+     scan_angles = None
+     side_distances = None
+ 
++    # When False (the default, and upstream behaviour), the iTTC collision check
++    # runs against the map-only scan, so a car can drive straight through another
++    # agent with no effect on its motion. When True, other agents are ray cast into
++    # the scan first, so hitting one stops the car the same way hitting a wall does.
++    # See update_scan().
++    agent_collisions = False
++
+     def __init__(self, params, seed, is_ego=False, time_step=0.01, num_beams=1080, fov=4.7, integrator=Integrator.Euler):
+         """
+         Init function
+@@ -227,7 +234,9 @@ class RaceCar(object):
+     def check_ttc(self, current_scan):
+         """
+         Check iTTC against the environment, sets vehicle states accordingly if collision occurs.
+-        Note that this does NOT check collision with other agents.
++        Whether other agents count depends on the scan handed in: update_scan() passes
++        the map-only scan by default, and the agent-augmented one when
++        RaceCar.agent_collisions is True.
+ 
+         state is [x, y, steer_angle, vel, yaw_angle, yaw_rate, slip_angle]
+ 
+@@ -440,11 +449,16 @@ class RaceCar(object):
+ 
+         current_scan = agent_scans[agent_index]
+ 
+-        # check ttc
+-        self.check_ttc(current_scan)
+-
+-        # ray cast other agents to modify scan
+-        new_scan = self.ray_cast_agents(current_scan)
++        if RaceCar.agent_collisions:
++            # Ray cast the other agents in FIRST, so the iTTC check sees them and a
++            # car that runs into another one is stopped instead of passing through.
++            new_scan = self.ray_cast_agents(current_scan)
++            self.check_ttc(new_scan)
++        else:
++            # Upstream order, kept byte-for-byte: iTTC against the map-only scan, so
++            # other agents never trigger a collision.
++            self.check_ttc(current_scan)
++            new_scan = self.ray_cast_agents(current_scan)
+ 
+         agent_scans[agent_index] = new_scan
+ 
+-- 
+2.50.1 (Apple Git-155)
+
