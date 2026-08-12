@@ -46,8 +46,11 @@ stack_master/maps/*
 stack_master/maps/GLC_smile_small/speed_scaling.yaml
 stack_master/maps/GLC_smile_small/ot_sectors.yaml
 !stack_master/maps/hangar_1905_v0
-stack_master/maps/hangar_1905_v0/speed_scaling.yaml
-stack_master/maps/hangar_1905_v0/ot_sectors.yaml
+# speed_scaling.yaml / ot_sectors.yaml are tracked for this map: they are drawn by
+# hand in the sector_slicer GUI and the map is unusable without them
+# (ot_interpolator dies on a missing n_sectors, state_machine then waits forever
+# for scaled global waypoints). The same two files are already tracked for
+# GLC_smile_small and glc_ot_ez.
 
 #todo: what's up with maps -> external map folder?
 .vscode/build
