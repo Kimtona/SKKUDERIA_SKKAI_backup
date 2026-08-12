@@ -46,7 +46,14 @@ bridge:
     map_img_ext: '.png'
 
     # opponent parameters
-    num_agent: 1
+    # 2 agents: the opponent car doubles as an obstacle the ego's LiDAR actually
+    # sees, since RaceCar.ray_cast_agents() casts against its body outline. Leave
+    # it parked (publish /opp_drive once with speed 0) for a static obstacle, or
+    # drive it for a dynamic one.
+    # NOTE: with num_agent > 1 the bridge only steps the sim once BOTH /drive and
+    # /opp_drive have been published at least once -- a never-published /opp_drive
+    # freezes the whole simulation, ego included.
+    num_agent: 2
 
     # ego starting pose on map
     sx: 0.5
@@ -54,9 +61,12 @@ bridge:
     stheta: -0.7
 
     # opp starting pose on map
-    sx1: 2.0
-    sy1: 0.5
-    stheta1: 0.0
+    # On the GLC_smile_small raceline at s = 22.0 m, the widest symmetric point of
+    # the track (d_left 1.125 m / d_right 1.123 m), so there is room to evade on
+    # either side -- spline_planner wants evasion_dist 0.65 m.
+    sx1: -0.533
+    sy1: -1.178
+    stheta1: -0.716
 
     # teleop
     kb_teleop: True
