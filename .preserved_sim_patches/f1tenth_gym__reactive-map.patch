@@ -1,0 +1,72 @@
+From 5e98eaa33a561763ea9610ab8ae52e2075cfe1c4 Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Thu, 13 Aug 2026 01:05:36 +0900
+Subject: [PATCH] Add update_map_from_occupancy_grid() to ScanSimulator2D
+
+Lets the scan simulator's bitmap be refreshed at runtime from a live
+nav_msgs/OccupancyGrid instead of only from a map image at gym.make()
+time, so externally-published obstacles show up in subsequent scans.
+
+PRESERVATION COMMIT: this was uncommitted work found in the working
+tree, captured so it survives submodule update/reclone. It has NOT
+been verified to run. Pairs with the f1tenth_gym_ros gym_bridge.py
+map_callback that calls this.
+---
+ gym/f110_gym/envs/laser_models.py | 41 +++++++++++++++++++++++++++++++
+ 1 file changed, 41 insertions(+)
+
+diff --git a/gym/f110_gym/envs/laser_models.py b/gym/f110_gym/envs/laser_models.py
+index 158060b..7159107 100644
+--- a/gym/f110_gym/envs/laser_models.py
++++ b/gym/f110_gym/envs/laser_models.py
+@@ -426,6 +426,47 @@ class ScanSimulator2D(object):
+ 
+         return True
+ 
++    def update_map_from_occupancy_grid(self, data, width, height, resolution,
++                                        origin_x, origin_y, origin_yaw, occ_thresh=65):
++        """
++        Update the bitmap of the scan simulator at runtime from a live nav_msgs/OccupancyGrid,
++        instead of loading a map image from disk. Lets externally-published obstacles (e.g. RViz
++        "Publish Point" clicks or a repainted /map topic) be reflected in subsequent scans.
++
++            Args:
++                data (Sequence[int]): OccupancyGrid.data, row-major, size width*height.
++                    Values are -1 (unknown) or 0-100 (occupancy probability).
++                width (int): OccupancyGrid.info.width
++                height (int): OccupancyGrid.info.height
++                resolution (float): OccupancyGrid.info.resolution (m/cell)
++                origin_x (float): OccupancyGrid.info.origin.position.x
++                origin_y (float): OccupancyGrid.info.origin.position.y
++                origin_yaw (float): yaw (rad) of OccupancyGrid.info.origin.orientation
++                occ_thresh (int, default=65): occupancy probability at/above which a cell counts
++                    as an obstacle. Matches map_free_threshold-style thresholding used by the
++                    original f1tenth_simulator's map_callback.
++
++            Returns:
++                None
++        """
++        # OccupancyGrid.data is already row-major from the grid origin, same orientation
++        # ScanSimulator2D expects after the FLIP_TOP_BOTTOM done in set_map() for image files
++        # -- no re-flip needed here, only binarization.
++        grid = np.array(data, dtype=np.int16).reshape((height, width))
++        self.map_img = np.where((grid >= 0) & (grid < occ_thresh), 255., 0.)
++
++        self.map_height = height
++        self.map_width = width
++        self.map_resolution = resolution
++
++        self.orig_x = origin_x
++        self.orig_y = origin_y
++        self.orig_s = np.sin(origin_yaw)
++        self.orig_c = np.cos(origin_yaw)
++
++        # get the distance transform
++        self.dt = get_dt(self.map_img, self.map_resolution)
++
+     def scan(self, pose, rng, std_dev=0.01):
+         """
+         Perform simulated 2D scan by pose on the given map
+-- 
+2.50.1 (Apple Git-155)
+

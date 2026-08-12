@@ -1,0 +1,201 @@
+From 84ede7a457286823a5c499bda1a7dda2f06036ef Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Thu, 13 Aug 2026 01:05:48 +0900
+Subject: [PATCH] Add reactive /map handling + clicked-point obstacles to
+ gym_bridge
+
+Subscribes and re-publishes /map, paints/erases obstacles from
+/clicked_point, and adds an InteractiveMarker 'Clear Obstacles' button
+(modelled on the ROS1 f1tenth_simulator's node/simulator.cpp).
+
+PRESERVATION COMMIT -- KNOWN BROKEN, DO NOT MERGE AS-IS.
+
+This is the uncommitted remnant of a session whose changes were
+supposed to be fully reverted (see parent repo 7f2b353). The revert
+was PARTIAL: package.xml was reverted but this file was not. It now
+imports interactive_markers while neither package.xml nor
+.install_utils/linux_req/linux_req.txt provides it, so the node dies
+at startup -- which cascades into detect TF failures ('map' -> '').
+
+Captured only so the work is not lost to a submodule update/reclone.
+Re-derive or repair deliberately; do not cherry-pick blindly.
+---
+ f1tenth_gym_ros/gym_bridge.py | 122 ++++++++++++++++++++++++++++++++++
+ 1 file changed, 122 insertions(+)
+
+diff --git a/f1tenth_gym_ros/gym_bridge.py b/f1tenth_gym_ros/gym_bridge.py
+index c51d73b..a62e64f 100644
+--- a/f1tenth_gym_ros/gym_bridge.py
++++ b/f1tenth_gym_ros/gym_bridge.py
+@@ -31,18 +31,26 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
+ 
+ from sensor_msgs.msg import LaserScan
+ from nav_msgs.msg import Odometry
++from nav_msgs.msg import OccupancyGrid
+ from geometry_msgs.msg import PoseStamped
+ from geometry_msgs.msg import PoseWithCovarianceStamped
+ from geometry_msgs.msg import Twist
+ from geometry_msgs.msg import TransformStamped
+ from geometry_msgs.msg import Transform
++from geometry_msgs.msg import PointStamped
+ from ackermann_msgs.msg import AckermannDriveStamped
++from std_msgs.msg import Empty
+ from tf2_ros import TransformBroadcaster
++from visualization_msgs.msg import InteractiveMarker, InteractiveMarkerControl, InteractiveMarkerFeedback, Marker
++from interactive_markers.interactive_marker_server import InteractiveMarkerServer
++
++from f110_gym.envs.base_classes import RaceCar
+ 
+ import gymnasium as gym
+ import numpy as np
+ from transforms3d import euler
+ import os.path
++import copy
+ 
+ 
+ class GymBridge(Node):
+@@ -108,6 +116,11 @@ class GymBridge(Node):
+         self.set_descriptor(name='kb_teleop', descriptor=ParameterDescriptor(
+             type=ParameterType.PARAMETER_BOOL, description="Whether teleop is enabled"))
+ 
++        self.declare_parameter('obstacle_size', 2, descriptor=ParameterDescriptor(
++            type=ParameterType.PARAMETER_INTEGER,
++            description="Cell radius painted into /map per /clicked_point obstacle"))
++        self.obstacle_size = self.get_parameter('obstacle_size').value
++
+         # check num_agents
+         num_agents = self.get_parameter('num_agent').value
+         if num_agents < 1 or num_agents > 2:
+@@ -138,6 +151,8 @@ class GymBridge(Node):
+         self.ego_requested_speed = 0.0
+         self.ego_steer = 0.0
+         self.ego_collision = False
++        self.current_map = None
++        self.original_map = None
+         ego_scan_topic = self.get_parameter('ego_scan_topic').value
+         ego_drive_topic = self.get_parameter('ego_drive_topic').value
+         scan_fov = self.get_parameter('scan_fov').value
+@@ -216,6 +231,12 @@ class GymBridge(Node):
+             reliability=ReliabilityPolicy.BEST_EFFORT,
+             durability=DurabilityPolicy.VOLATILE,
+             depth=10)
++        # Matches nav2_map_server's default /map QoS so late subscribers (e.g. RViz) still get
++        # the latest map, and so our own re-publishes after painting an obstacle are visible too.
++        map_qos_profile = QoSProfile(
++            reliability=ReliabilityPolicy.RELIABLE,
++            durability=DurabilityPolicy.TRANSIENT_LOCAL,
++            depth=1)
+ 
+         # subscribers
+         self.ego_drive_sub = self.create_subscription(
+@@ -247,6 +268,107 @@ class GymBridge(Node):
+                 self.teleop_callback,
+                 10)
+ 
++        # Reactive map / obstacle painting: lets externally-published obstacles (RViz "Publish
++        # Point" clicks, or a node like opponent_publisher repainting /map) be reflected by the
++        # LiDAR sim, instead of the scan simulator's map being fixed at gym.make() time.
++        self.map_pub = self.create_publisher(
++            OccupancyGrid, 'map', qos_profile=map_qos_profile)
++        self.map_sub = self.create_subscription(
++            OccupancyGrid, 'map', self.map_callback, qos_profile=map_qos_profile)
++        self.clicked_point_sub = self.create_subscription(
++            PointStamped, 'clicked_point', self.obs_callback, 10)
++        self.clear_obs_sub = self.create_subscription(
++            Empty, 'clear_sim_obstacles', self.clear_obs_callback, 10)
++
++        # Clickable green "Clear Obstacles" button, ported from the ROS1 f1tenth_simulator
++        # (node/simulator.cpp), which used the same interactive_markers BUTTON control.
++        self.im_server = InteractiveMarkerServer(self, 'sim_obstacle_controls')
++        clear_obs_button = InteractiveMarker()
++        clear_obs_button.header.frame_id = 'map'
++        clear_obs_button.pose.position.x = 0.0
++        clear_obs_button.pose.position.y = -5.0
++        clear_obs_button.scale = 1.0
++        clear_obs_button.name = 'clear_obstacles'
++        clear_obs_button.description = 'Clear Obstacles\n(Left Click)'
++
++        clear_obs_control = InteractiveMarkerControl()
++        clear_obs_control.interaction_mode = InteractiveMarkerControl.BUTTON
++        clear_obs_control.name = 'clear_obstacles_control'
++        clear_obs_control.always_visible = True
++
++        clear_obs_marker = Marker()
++        clear_obs_marker.type = Marker.CUBE
++        clear_obs_marker.scale.x = clear_obs_button.scale * 0.45
++        clear_obs_marker.scale.y = clear_obs_button.scale * 0.65
++        clear_obs_marker.scale.z = clear_obs_button.scale * 0.45
++        clear_obs_marker.color.r = 0.0
++        clear_obs_marker.color.g = 1.0
++        clear_obs_marker.color.b = 0.0
++        clear_obs_marker.color.a = 1.0
++        clear_obs_control.markers.append(clear_obs_marker)
++        clear_obs_button.controls.append(clear_obs_control)
++
++        self.im_server.insert(clear_obs_button, feedback_callback=self.clear_obstacles_button_cb)
++        self.im_server.applyChanges()
++
++    def clear_obstacles_button_cb(self, feedback):
++        if feedback.event_type == InteractiveMarkerFeedback.BUTTON_CLICK:
++            self.get_logger().info('Clearing obstacles.')
++            self.clear_obs_callback(Empty())
++
++    def map_callback(self, map_msg):
++        self.current_map = map_msg
++        if self.original_map is None:
++            self.original_map = copy.deepcopy(map_msg)
++
++        origin_q = map_msg.info.origin.orientation
++        _, _, origin_yaw = euler.quat2euler(
++            [origin_q.w, origin_q.x, origin_q.y, origin_q.z], axes='sxyz')
++        RaceCar.scan_simulator.update_map_from_occupancy_grid(
++            map_msg.data,
++            map_msg.info.width,
++            map_msg.info.height,
++            map_msg.info.resolution,
++            map_msg.info.origin.position.x,
++            map_msg.info.origin.position.y,
++            origin_yaw)
++
++    def obs_callback(self, point_msg):
++        """Toggle an obstacle at the clicked point: paints one in on empty ground,
++        or erases the one under the click if it was previously painted there."""
++        if self.current_map is None:
++            self.get_logger().warn(
++                'Ignoring /clicked_point: no /map received yet.')
++            return
++
++        info = self.current_map.info
++        col = int((point_msg.point.x - info.origin.position.x) / info.resolution)
++        row = int((point_msg.point.y - info.origin.position.y) / info.resolution)
++        if not (0 <= row < info.height and 0 <= col < info.width):
++            return
++        center_idx = row * info.width + col
++
++        data = list(self.current_map.data)
++        size = self.obstacle_size
++        # A click that lands on a cell we previously painted (i.e. it's occupied now
++        # but wasn't in the original map) erases that obstacle instead of adding a new one.
++        erasing = data[center_idx] == 100 and self.original_map.data[center_idx] != 100
++        for i in range(-size, size):
++            for j in range(-size, size):
++                r = row + i
++                c = col + j
++                if 0 <= r < info.height and 0 <= c < info.width:
++                    idx = r * info.width + c
++                    data[idx] = self.original_map.data[idx] if erasing else 100
++        self.current_map.data = data
++        self.map_pub.publish(self.current_map)
++
++    def clear_obs_callback(self, _msg):
++        if self.original_map is None:
++            return
++        self.current_map = copy.deepcopy(self.original_map)
++        self.map_pub.publish(self.current_map)
++
+     def drive_callback(self, drive_msg):
+         self.ego_requested_speed = drive_msg.drive.speed
+         self.ego_steer = drive_msg.drive.steering_angle
+-- 
+2.50.1 (Apple Git-155)
+
