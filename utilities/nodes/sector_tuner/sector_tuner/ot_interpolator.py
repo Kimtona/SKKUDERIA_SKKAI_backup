@@ -1,6 +1,7 @@
 import yaml
 import rclpy
 from rclpy.node import Node
+from rclpy.parameter import Parameter
 from f110_msgs.msg import Wpnt, WpntArray
 import numpy as np
 from ament_index_python.packages import get_package_share_directory
@@ -34,6 +35,7 @@ class OvertakingInterpolator(Node):
         # get initial scaling
         self.sectors_params=self.parameters_to_dict()
         self.n_sectors = self.sectors_params['n_sectors']
+        self._apply_force_all_ot_true()
         self.get_logger().info(str(self.sectors_params))
         self.yeet_factor = self.sectors_params['yeet_factor']
         self.spline_len = int(self.sectors_params['spline_len'])
@@ -59,6 +61,42 @@ class OvertakingInterpolator(Node):
         self.wait_for_message_timer = self.create_timer(timer_period, self.wait_for_message_callback)
         self.get_logger().info("Wating on first messages from global waypoints topics (og, scaled, and shortest path).")
         
+    def _apply_force_all_ot_true(self):
+        """
+        Simulation convenience: enable overtaking in every sector.
+
+        Each map's ot_sectors.yaml ships with ot_flag false for all sectors -- a
+        safety gate for the real car, where an untested sector's overtake maneuver
+        can put the car into a wall. In simulation there is no such cost, and
+        leaving them false is actively misleading: the car detects an obstacle,
+        enters TRAILING, and then sits behind it forever because state_machine's
+        _check_ot_sector never returns True.
+
+        base_system_launch.xml feeds this from its own `sim` argument, so the real
+        car keeps the gate. The map file itself is never modified.
+
+        The has_parameter() guard matters: this node is constructed with
+        automatically_declare_parameters_from_overrides=True, so a launch file that
+        passes force_all_ot_true has already declared it, and declare_parameter()
+        would raise ParameterAlreadyDeclaredException.
+        """
+        if not self.has_parameter('force_all_ot_true'):
+            self.declare_parameter('force_all_ot_true', False)
+        if not self.get_parameter('force_all_ot_true').value:
+            return
+
+        forced = []
+        for i in range(self.n_sectors):
+            self.sectors_params[f'Overtaking_sector{i}']['ot_flag'] = True
+            forced.append(
+                Parameter(f'Overtaking_sector{i}.ot_flag', Parameter.Type.BOOL, True))
+        # Set them as real parameters, not just in the local dict: state_machine
+        # reads these off this node over the parameter service and then tracks them
+        # with a parameter event callback.
+        self.set_parameters(forced)
+        self.get_logger().warn(
+            f'[SIM] force_all_ot_true: enabled overtaking in all {self.n_sectors} sectors.')
+
     def parameters_to_dict(self):
         params = {}
         for key in self._parameters:

@@ -61,6 +61,10 @@
   <node pkg="sector_tuner" name="ot_interpolator" exec="ot_interpolator">
     <param name="map_name" value="$(var map_name)" />
     <param from="$(find-pkg-share stack_master)/maps/$(var map_name)/ot_sectors.yaml" />
+    <!-- Maps ship with every sector's ot_flag false as a safety gate for the real
+         car; auto-enable them in simulation, where a bad overtake costs nothing.
+         The map's ot_sectors.yaml is not modified. -->
+    <param name="force_all_ot_true" value="$(var sim)" />
   </node>
 
   <!-- launch lap analyser -->
