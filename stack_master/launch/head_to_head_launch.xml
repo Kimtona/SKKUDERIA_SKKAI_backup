@@ -4,6 +4,7 @@
     <arg name="overtake_mode" default="spliner" /> <!--  spliner / graph_based -->
     <arg name="ctrl_algo" default="MAP"/> <!-- MAP / PP -->
     <arg name="measure" default="False" />
+    <arg name="sim" default="False" description="True/False if running in simulation" />
 
     <!-- launch controller manager -->
     <include file="$(find-pkg-share controller)/launch/controller_launch.xml">
@@ -19,7 +20,9 @@
     <!-- SPLINE PLANNER-->
     <!-- this is actually the only way this works -->
     <group if="$(eval '\'$(var overtake_mode)\' == \'spliner\'')"> 
-        <include file="$(find-pkg-share spline_planner)/launch/spline_planner_launch.xml" />
+        <include file="$(find-pkg-share spline_planner)/launch/spline_planner_launch.xml">
+            <arg name="sim" value="$(var sim)" />
+        </include>
     </group>
 
     <!-- PERCEPTION -->

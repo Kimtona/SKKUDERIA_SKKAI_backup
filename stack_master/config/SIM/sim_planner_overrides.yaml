@@ -1,0 +1,18 @@
+# Simulation-only planner overrides.
+#
+# Loaded ONLY when a launch is started with sim:=True, on top of each node's
+# built-in defaults, so the real car keeps its own tuning untouched. Put sim
+# tuning here rather than editing shared config or node defaults.
+
+spline_planner:
+  ros__parameters:
+    # Default is 0.2 m, which puts the evasion line 0.29999 m from a parked
+    # opponent -- just under state_machine's lateral_width_ot_m of 0.3 m. The
+    # `abs(ot_obs_dist) < lateral_width_ot_m` check in _check_ofree then fails by
+    # 1e-5 m on every cycle, so the car never leaves TRAILING and sits behind the
+    # obstacle forever.
+    #
+    # 0.65 m clears that threshold with margin and still fits the track: at the
+    # test point (GLC_smile_small, s = 22.0 m) there is 1.12 m to either boundary.
+    # Raise with care on narrower sections -- spline_bound_mindist is 0.2 m.
+    evasion_dist: 0.65

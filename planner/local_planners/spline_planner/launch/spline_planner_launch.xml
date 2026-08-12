@@ -1,6 +1,21 @@
 <launch>
+    <arg name="sim" default="False" description="True/False if running in simulation" />
 
-    <node pkg="spline_planner" exec="spline_planner" name="spline_planner" output="screen">
-    </node>
+    <!-- Two declarations rather than one node with a conditional <param>: the
+         XML launch <param> tag does not accept an `if` attribute, so the
+         condition has to sit on an enclosing <group>. The real-car branch
+         (sim:=False, the default) is byte-for-byte the original node. -->
+
+    <group if="$(var sim)">
+        <node pkg="spline_planner" exec="spline_planner" name="spline_planner" output="screen">
+            <!-- Simulation-only tuning, layered over the node's built-in defaults. -->
+            <param from="$(find-pkg-share stack_master)/config/SIM/sim_planner_overrides.yaml" />
+        </node>
+    </group>
+
+    <group unless="$(var sim)">
+        <node pkg="spline_planner" exec="spline_planner" name="spline_planner" output="screen">
+        </node>
+    </group>
 
 </launch>
