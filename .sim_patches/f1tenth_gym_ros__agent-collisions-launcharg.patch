@@ -1,0 +1,68 @@
+From 4b441eaa95a1bf067f72b0a74a4660cb7ce120ba Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Thu, 13 Aug 2026 05:30:59 +0900
+Subject: [PATCH] Expose agent_collisions as a launch argument
+
+Lets it be set from the command line
+
+    ros2 launch stack_master base_system_launch.xml sim:=True agent_collisions:=true
+
+instead of editing config/SIM/sim.yaml. Default False, matching the node
+default and upstream behaviour.
+
+ParameterValue with an explicit value_type is needed because a
+LaunchConfiguration resolves to a string while the node declares the
+parameter as a bool. It is listed after sim.yaml in the node's parameter
+list, so the launch argument wins if both are set.
+---
+ launch/gym_bridge_launch.py | 13 ++++++++++++-
+ 1 file changed, 12 insertions(+), 1 deletion(-)
+
+diff --git a/launch/gym_bridge_launch.py b/launch/gym_bridge_launch.py
+index d7f0874..60f553c 100644
+--- a/launch/gym_bridge_launch.py
++++ b/launch/gym_bridge_launch.py
+@@ -22,6 +22,7 @@
+ 
+ from launch import LaunchDescription
+ from launch_ros.actions import Node
++from launch_ros.parameter_descriptions import ParameterValue
+ from launch.substitutions import Command, LaunchConfiguration
+ from launch.actions import DeclareLaunchArgument
+ from ament_index_python.packages import get_package_share_directory
+@@ -36,6 +37,12 @@ def generate_launch_description():
+     map_yaml_path_arg = DeclareLaunchArgument(
+         'map_yaml_path', description="Path to map YAML file. Passed in via top-level launchfile.")
+ 
++    agent_collisions = LaunchConfiguration('agent_collisions')
++    agent_collisions_arg = DeclareLaunchArgument(
++        'agent_collisions', default_value='False',
++        description="Let collisions with other agents stop the car. False (default) is "
++                    "upstream f1tenth_gym behaviour, where cars drive through each other.")
++
+     sim_setup_params = os.path.join(
+         get_package_share_directory('stack_master'),
+         'config',
+@@ -51,7 +58,10 @@ def generate_launch_description():
+         name='bridge',
+         parameters=[sim_setup_params,
+                     {'map_path': map_yaml_path},
+-                    {'sim_params': os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim_params.yaml')}]
++                    {'sim_params': os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim_params.yaml')},
++                    # ParameterValue with an explicit type: a LaunchConfiguration is a
++                    # string, and the node declares this as a bool.
++                    {'agent_collisions': ParameterValue(agent_collisions, value_type=bool)}]
+     )
+     rviz_node = Node(
+         package='rviz2',
+@@ -98,6 +108,7 @@ def generate_launch_description():
+ 
+     # finalize
+     ld.add_action(map_yaml_path_arg)
++    ld.add_action(agent_collisions_arg)
+     ld.add_action(rviz_node)
+     ld.add_action(bridge_node)
+     ld.add_action(nav_lifecycle_node)
+-- 
+2.50.1 (Apple Git-155)
+

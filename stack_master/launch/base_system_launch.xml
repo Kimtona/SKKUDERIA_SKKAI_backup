@@ -5,6 +5,10 @@
   <arg name="sim" default="False" description="True/False if you want to run simulation" />
   <arg name="loc_algorithm" default="slam" description="'slam' / 'synpf' to switch localisation algorithm" />
   <arg name="rviz" default="False" description="Open RViz with the race view" />
+  <arg name="agent_collisions" default="False"
+    description="Sim only: let collisions with the opponent car stop the ego. False (default)
+      is upstream f1tenth_gym behaviour, where the cars drive through each other and a failed
+      overtake leaves no trace in the logs." />
 
   <!-- Note: This is merely the share path (read-only) as the base_system
     is not expected to modify maps in any way. -->
@@ -14,6 +18,7 @@
   <group if="$(var sim)">
     <include file="$(find-pkg-share f1tenth_gym_ros)/launch/gym_bridge_launch.py">
       <arg name="map_yaml_path" value="$(var map_path)/$(var map_name).yaml" />
+      <arg name="agent_collisions" value="$(var agent_collisions)" />
     </include>
     <!-- only needed in sim -->
     <include file="$(find-pkg-share frenet_odom_republisher)/launch/frenet_odom_republisher_launch.xml" />

@@ -15,6 +15,7 @@ PATCHES=(
     "$GYM|f1tenth_gym__agent-collisions.patch|agent-agent collisions"
     "$GYM_ROS|f1tenth_gym_ros__reactive-map.patch|reactive /map"
     "$GYM_ROS|f1tenth_gym_ros__agent-collisions.patch|agent_collisions as a bridge"
+    "$GYM_ROS|f1tenth_gym_ros__agent-collisions-launcharg.patch|agent_collisions as a launch"
 )
 
 for entry in "${PATCHES[@]}"; do

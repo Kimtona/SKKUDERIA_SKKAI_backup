@@ -21,6 +21,7 @@ Placing a static obstacle by clicking **Publish Point** in RViz.
 | `f1tenth_gym_ros__reactive-map.patch` | `/map` subscribe + re-publish, `/clicked_point` obstacle toggle, `/clear_sim_obstacles` |
 | `f1tenth_gym__agent-collisions.patch` | `RaceCar.agent_collisions` — optionally let hitting another car stop you |
 | `f1tenth_gym_ros__agent-collisions.patch` | `agent_collisions` parameter on the bridge |
+| `f1tenth_gym_ros__agent-collisions-launcharg.patch` | same, as a launch argument |
 
 Both halves are required. `gym_bridge` fixes the scan simulator's map at
 `gym.make()` time and never re-reads it, so painting `/map` alone (which is what
@@ -71,11 +72,13 @@ changes. The disabled branch keeps the original call order verbatim rather than
 assuming `ray_cast_agents` leaves its input untouched.
 
 ```bash
-ros2 run f1tenth_gym_ros gym_bridge --ros-args ... -p agent_collisions:=true
+ros2 launch stack_master base_system_launch.xml \
+    sim:=True agent_collisions:=true map_name:=hangar_1905_v0 racecar_version:=SIM
 ```
 
-or add `agent_collisions: true` under `bridge/ros__parameters` in
-`config/SIM/sim.yaml`. It is read once at startup.
+`base_system_launch.xml` forwards the argument to `gym_bridge_launch.py`, which
+passes it to the node after `sim.yaml`, so the launch argument wins over anything
+set in that file. It is read once at startup.
 
 Enabling it means a car that hits the opponent stays stopped until an
 `/initialpose` reset, which makes repeated runs more work — that is the reason
