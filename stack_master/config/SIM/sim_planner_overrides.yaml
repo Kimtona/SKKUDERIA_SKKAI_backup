@@ -6,13 +6,26 @@
 
 spline_planner:
   ros__parameters:
-    # Default is 0.2 m, which puts the evasion line 0.29999 m from a parked
-    # opponent -- just under state_machine's lateral_width_ot_m of 0.3 m. The
-    # `abs(ot_obs_dist) < lateral_width_ot_m` check in _check_ofree then fails by
-    # 1e-5 m on every cycle, so the car never leaves TRAILING and sits behind the
-    # obstacle forever.
+    # Tuned by measuring ego-to-opponent centre distance at closest approach, not
+    # by watching state transitions: the car reaches OVERTAKE and completes laps
+    # just the same while driving straight through the opponent, so lap counts and
+    # state logs prove nothing here.
     #
-    # 0.65 m clears that threshold with margin and still fits the track: at the
-    # test point (GLC_smile_small, s = 22.0 m) there is 1.12 m to either boundary.
-    # Raise with care on narrower sections -- spline_bound_mindist is 0.2 m.
-    evasion_dist: 0.65
+    # The default 0.2 m puts the evasion line 0.29999 m from a parked opponent,
+    # a hair under state_machine's lateral_width_ot_m (0.3 m), so _check_ofree
+    # rejects it every cycle and the car never commits. Too large is worse: the
+    # spline then breaches the track bounds, spline_planner logs "Evasion
+    # trajectory too close to TRACKBOUNDS, aborting evasion" and publishes an
+    # EMPTY waypoint array, which looks identical to having no obstacle at all.
+    #
+    # 0.50 m sits between those failures. Measured on glc_ot_ez with a parked
+    # opponent: 7 of 8 approaches cleared at 0.36-0.51 m centre-to-centre, with
+    # zero TRACKBOUNDS aborts. Cars are 0.2032 m wide, so anything under ~0.25 m
+    # is an overlap.
+    #
+    # This value is track-dependent. Usable lateral room is
+    #     min(d_left | d_right) over the spline's +/-4 m span  -  spline_bound_mindist
+    # which is 0.586 m on glc_ot_ez but only 0.364 m on GLC_smile_small -- on that
+    # map the evasion is aborted on essentially every approach and the car drives
+    # through the opponent. Re-check this number before trusting a new map.
+    evasion_dist: 0.50
