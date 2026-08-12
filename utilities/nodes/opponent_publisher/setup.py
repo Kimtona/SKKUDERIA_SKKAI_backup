@@ -25,7 +25,8 @@ setup(
     entry_points={
         'console_scripts': [
             'collision_detector = opponent_publisher.collision_detector:main',
-            'obstacle_publisher = opponent_publisher.obstacle_publisher:main'
+            'obstacle_publisher = opponent_publisher.obstacle_publisher:main',
+            'opponent_driver = opponent_publisher.opponent_driver:main'
         ],
     },
 )
