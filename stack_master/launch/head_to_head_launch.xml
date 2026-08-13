@@ -34,6 +34,7 @@
         <arg name="param_file" value="$(find-pkg-share stack_master)/config/opponent_tracker_params.yaml" />
         <arg name="map_name" value="$(var map_name)" />
         <arg name="measure" value="$(var measure)" />
+        <arg name="sim" value="$(var sim)" />
     </include>
     
 </launch>

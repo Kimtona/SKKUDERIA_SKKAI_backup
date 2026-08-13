@@ -1,0 +1,42 @@
+# Simulation-only perception overrides.
+#
+# Loaded ONLY when a launch is started with sim:=True, layered on top of
+# opponent_tracker_params.yaml, so the real car keeps its own tuning untouched.
+# Same pattern as sim_planner_overrides.yaml and sim_state_machine_overrides.yaml.
+
+detect:
+  ros__parameters:
+    # The shared config sets max_obs_size 0.5 m, which is SMALLER THAN THE
+    # OPPONENT CAR as the detector fits it. That silently throws away half of
+    # all detections of a moving opponent, and it is why step 3 fails: the
+    # planner has nothing to evade for most of the chase.
+    #
+    # Measured on hangar_1905_v0 (2026-08-13), fraction of
+    # /perception/detection/raw_obstacles messages that were non-empty, keyed
+    # on the opponent's true range and bearing from the ego:
+    #
+    #                          max_obs_size 0.5   max_obs_size 1.0
+    #   within 6 m, ahead            21%                68%
+    #   within 3 m, ahead            29%                92%
+    #   1-2 m, ahead                 21%                99%
+    #   0-1 m, ahead                  6%               100%
+    #
+    # With the ceiling raised, the fitted sizes run p50 0.50 m, p90 0.58 m,
+    # max 0.58 m -- so 50% of real detections were landing above 0.5 m. The
+    # giveaway before the fix was the size histogram being clipped exactly at
+    # the threshold: n=11923, p50 0.45, p99 0.45, max 0.50.
+    #
+    # A parked opponent fits at ~0.31 m and clears 0.5 m easily, which is why
+    # step 2 passes and this went unnoticed. A moving one is seen obliquely and
+    # presents its diagonal.
+    #
+    # 0.7 leaves headroom over the measured 0.58 m without opening up much. It
+    # costs nothing in false positives here: across 1245 messages with the
+    # opponent beyond 9 m, detections at both 0.5 and 1.0 were zero, so no wall
+    # fragment is being admitted -- grid_filter's erosion (filter_kernel_size
+    # 11) is doing that job.
+    #
+    # SIM-scoped on purpose. The real car runs the same chassis, so 0.5 is
+    # probably too small there too, but that is a call to make against real
+    # LiDAR data, not against gym's.
+    max_obs_size: 0.7
