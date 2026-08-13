@@ -45,6 +45,20 @@ bridge:
     # map parameters
     map_img_ext: '.png'
 
+    # RViz "Publish Point" obstacle size, as a cell radius: the painted block is
+    # (2 * obstacle_size)^2 cells at 0.05 m/cell, so 4 -> 0.40 m square.
+    #
+    # NOT the bridge's own default of 2 (0.20 m), because a 0.20 m obstacle is
+    # invisible to `detect` however well the LiDAR sees it. detect segments the scan
+    # and drops any cluster under min_obs_size = 10 laser points; with gym's
+    # 4.7 rad / 1080 beams = 0.00435 rad per beam, an obstacle of side w at range r
+    # spans w / (r * 0.00435) points, so 0.20 m only clears 10 points inside 4.6 m
+    # -- measured 8 points at 5.5 m, and perception published nothing at all.
+    # 0.40 m clears it out to ~9.2 m, which covers detect's max_viewing_distance of
+    # 9.0 m, while staying under max_obs_size = 0.5 m (measured size 0.385 m).
+    # One click is then enough; at 0.20 m it took a 2x2 block of clicks.
+    obstacle_size: 4
+
     # opponent parameters
     # 2 agents: the opponent car doubles as an obstacle the ego's LiDAR actually
     # sees, since RaceCar.ray_cast_agents() casts against its body outline. Leave

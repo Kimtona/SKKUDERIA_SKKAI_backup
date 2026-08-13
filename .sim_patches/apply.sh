@@ -10,12 +10,18 @@ GYM=base_system/f110_simulator/f1tenth_gym
 GYM_ROS=base_system/f110_simulator/f1tenth_gym_ros
 
 # "<submodule path>|<patch file>|<subject fragment proving it is applied>"
+#
+# Order matters: these are `git am` patches, so within one submodule they must be
+# listed in the order their commits were made. Each gym_ros patch touches
+# gym_bridge.py, and obstacle-size-param edits a block that reactive-map
+# introduces, so it has to come last.
 PATCHES=(
     "$GYM|f1tenth_gym__reactive-map.patch|update_map_from_occupancy_grid"
     "$GYM|f1tenth_gym__agent-collisions.patch|agent-agent collisions"
     "$GYM_ROS|f1tenth_gym_ros__reactive-map.patch|reactive /map"
     "$GYM_ROS|f1tenth_gym_ros__agent-collisions.patch|agent_collisions as a bridge"
     "$GYM_ROS|f1tenth_gym_ros__agent-collisions-launcharg.patch|agent_collisions as a launch"
+    "$GYM_ROS|f1tenth_gym_ros__obstacle-size-param.patch|obstacle_size be set from"
 )
 
 for entry in "${PATCHES[@]}"; do

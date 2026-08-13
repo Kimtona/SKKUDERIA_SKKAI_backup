@@ -424,6 +424,42 @@ Visualization Manager:
       Name: Perception
     - Class: rviz_common/Group
       Displays:
+        # The purple cylinders spline_planner draws along its evasion path
+        # (xyv_to_markers: r 0.75 / b 0.75, height scaled by speed). Enabled here,
+        # unlike in viz/head_to_head.rviz where it ships off, because seeing
+        # whether an evasion exists is the whole point of the sim obstacle tests.
+        - Class: rviz_default_plugins/MarkerArray
+          Enabled: true
+          Name: Avoidance
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /planner/avoidance/markers
+          Value: true
+        # Which obstacle the planner actually decided to evade -- distinguishes
+        # "no evasion drawn because nothing was detected" from "detected but
+        # aborted".
+        - Class: rviz_default_plugins/Marker
+          Enabled: true
+          Name: Considered OBS
+          Namespaces:
+            {}
+          Topic:
+            Depth: 5
+            Durability Policy: Volatile
+            Filter size: 10
+            History Policy: Keep Last
+            Reliability Policy: Reliable
+            Value: /planner/avoidance/considered_OBS
+          Value: true
+      Enabled: true
+      Name: Planner
+    - Class: rviz_common/Group
+      Displays:
         - Class: rviz_default_plugins/MarkerArray
           Enabled: true
           Name: Speed Sectors

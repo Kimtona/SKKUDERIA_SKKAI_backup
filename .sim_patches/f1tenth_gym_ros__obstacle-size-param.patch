@@ -1,0 +1,57 @@
+From ff2d2c367c4007430519afc6484bfb8f71370d19 Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Thu, 13 Aug 2026 14:57:02 +0900
+Subject: [PATCH] Let obstacle_size be set from a params file
+
+Setting obstacle_size in a params file killed the bridge at startup:
+
+    rclpy.exceptions.ParameterAlreadyDeclaredException:
+        ('Parameter(s) already declared', ['obstacle_size'])
+
+This node is constructed with
+automatically_declare_parameters_from_overrides=True, so a parameter that
+appears in a params file, on the command line or in a launch file is
+already declared by the time __init__ runs, and declare_parameter() on it
+raises. agent_collisions below already carries a has_parameter guard for
+exactly this; obstacle_size did not.
+
+Needed because the bridge's own default of 2 (a cell radius, so 0.20 m
+square) is too small for the stack to react to: detect drops any scan
+cluster under min_obs_size = 10 laser points, and at gym's 4.7 rad / 1080
+beams an 0.20 m obstacle only spans 10 points inside 4.6 m. Measured 8
+points at 5.5 m with /perception/obstacles staying empty, so no evasion
+was ever planned. config/SIM/sim.yaml now asks for obstacle_size: 4
+(0.40 m), which needs this guard to launch at all.
+
+Behaviour is unchanged when the parameter is not overridden: the guard
+falls through to the same declare_parameter() and the same default of 2.
+---
+ f1tenth_gym_ros/gym_bridge.py | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/f1tenth_gym_ros/gym_bridge.py b/f1tenth_gym_ros/gym_bridge.py
+index 6743bdd..e2c718a 100644
+--- a/f1tenth_gym_ros/gym_bridge.py
++++ b/f1tenth_gym_ros/gym_bridge.py
+@@ -114,9 +114,15 @@ class GymBridge(Node):
+         self.set_descriptor(name='kb_teleop', descriptor=ParameterDescriptor(
+             type=ParameterType.PARAMETER_BOOL, description="Whether teleop is enabled"))
+ 
+-        self.declare_parameter('obstacle_size', 2, descriptor=ParameterDescriptor(
+-            type=ParameterType.PARAMETER_INTEGER,
+-            description="Cell radius painted into /map per /clicked_point obstacle"))
++        # has_parameter guard for the same reason as agent_collisions below: this node
++        # is constructed with automatically_declare_parameters_from_overrides=True, so
++        # setting obstacle_size in a params file (config/SIM/sim.yaml does) already
++        # declares it, and an unguarded declare_parameter() raises
++        # ParameterAlreadyDeclaredException and kills the bridge at startup.
++        if not self.has_parameter('obstacle_size'):
++            self.declare_parameter('obstacle_size', 2, descriptor=ParameterDescriptor(
++                type=ParameterType.PARAMETER_INTEGER,
++                description="Cell radius painted into /map per /clicked_point obstacle"))
+         self.obstacle_size = self.get_parameter('obstacle_size').value
+ 
+         # Off by default, which is upstream f1tenth_gym behaviour: the iTTC check runs
+-- 
+2.50.1 (Apple Git-155)
+
