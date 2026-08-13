@@ -95,10 +95,16 @@ class ObstacleSpliner(Node):
         self.spline_bound_mindist = 0.2
         self.fixed_pred_time = 0.15
         self.kd_obs_pred = 1.0
-        
+        self.adaptive_apex = False
+
         pd = ParameterDescriptor(
             type=ParameterType.PARAMETER_DOUBLE,
             floating_point_range=[FloatingPointRange(from_value=0.1, to_value=8.0, step=0.001)]
+        )
+        bd = ParameterDescriptor(
+            description="Shrink the evasion apex to the largest one that still clears the "
+                        "track bounds, instead of aborting the whole evasion when it does not",
+            type=ParameterType.PARAMETER_BOOL,
         )
         param_dicts = [
             {'name': 'pre_apex_0', 'default': abs(self.pre_apex_0), 'descriptor': pd},
@@ -111,11 +117,19 @@ class ObstacleSpliner(Node):
             {'name': 'obs_traj_tresh', 'default': self.obs_traj_tresh, 'descriptor': pd},
             {'name': 'spline_bound_mindist', 'default': self.spline_bound_mindist, 'descriptor': pd},
             {'name': 'fixed_pred_time', 'default': self.fixed_pred_time, 'descriptor': pd},
-            {'name': 'kd_obs_pred', 'default': self.kd_obs_pred, 'descriptor': pd}
+            {'name': 'kd_obs_pred', 'default': self.kd_obs_pred, 'descriptor': pd},
+            {'name': 'adaptive_apex', 'default': self.adaptive_apex, 'descriptor': bd}
         ]
 
-        self.declare_all_parameters(param_dicts=param_dicts)
+        declared = self.declare_all_parameters(param_dicts=param_dicts)
         self.add_on_set_parameters_callback(self.dyn_param_cb)
+        # declare_parameter does not run the on-set callback -- it is registered
+        # after the declarations, and the declarations are where a params file's
+        # values arrive. Without this call those values sit in the ROS parameter
+        # (so `ros2 param get` reports them) while the node keeps reading the
+        # Python attributes set above, i.e. a params file is silently ignored
+        # until someone happens to `ros2 param set` something. Apply them once.
+        self.dyn_param_cb(declared)
 
         if self.measuring:
             self.latency_pub = self.create_publisher(Float32, '/planner/avoidance/latency', QoSProfile(depth=10))
@@ -166,6 +180,8 @@ class ObstacleSpliner(Node):
                 self.fixed_pred_time = param.value
             elif param_name == 'kd_obs_pred':
                 self.kd_obs_pred = param.value
+            elif param_name == 'adaptive_apex':
+                self.adaptive_apex = param.value
         
         # Ensure ascending order for spline parameters
         if self.pre_apex_1 < self.pre_apex_0:
@@ -338,6 +354,41 @@ class ObstacleSpliner(Node):
                 self.pub_propagated.publish(marker)
 
         return obs
+
+    def _max_apex_within_bounds(self, shape, evasion_s, gb_wpnts, wpnt_dist,
+                                more_space) -> float:
+        """Largest apex magnitude whose spline still clears the track bounds.
+
+        The TRACKBOUNDS check below rejects the *entire* evasion as soon as one
+        sample sits closer than spline_bound_mindist to its bound. It does not
+        have to be discovered that way. The spline is built through control
+        values that are zero everywhere but the apex, scipy's spline is linear
+        in those values, and clip(k*f, 0, k) == k*clip(f, 0, 1), so
+
+            evasion_d[i] == d_apex * shape[i]
+
+        with shape independent of d_apex. The check is therefore just
+
+            |d_apex| <= (|tb_i| - spline_bound_mindist) / shape[i]   for all i
+
+        and the tightest of those bounds is the answer in closed form.
+
+        Samples where the spline is essentially on the raceline are skipped, the
+        same ones the TRACKBOUNDS check skips via its spline_resolution guard.
+        """
+        limit = np.inf
+        s_wrapped = evasion_s % self.gb_max_s
+        for i in range(s_wrapped.shape[0]):
+            if shape[i] <= 1e-3:
+                continue
+            gb_wpnt_i = int((s_wrapped[i] / wpnt_dist) % self.gb_max_idx)
+            tb_dist = (gb_wpnts[gb_wpnt_i].d_left if more_space == "left"
+                       else gb_wpnts[gb_wpnt_i].d_right)
+            limit = min(limit, (abs(tb_dist) - self.spline_bound_mindist) / shape[i])
+        # Shave a hair off: capping exactly to the limit leaves d_apex * shape[i]
+        # equal to the bound to within rounding, and the check below is a strict
+        # `>`, so it still trips. 1e-6 relative is a micrometre at these sizes.
+        return max(limit * (1.0 - 1e-6), 0.0)
 
     def _check_ot_side_possible(self, more_space) -> bool:
         # TODO make rosparam for cur_d threshold
@@ -513,7 +564,21 @@ class ObstacleSpliner(Node):
             evasion_s = np.arange(
                 evasion_points[0, 0], evasion_points[-1, 0], spline_resolution)
             # Clipe the d to the apex distance
-            if d_apex < 0:
+            if self.adaptive_apex and d_apex != 0:
+                # Shrink the apex to the largest one the bounds allow rather
+                # than letting the TRACKBOUNDS check throw the evasion away. The
+                # normalised shape is the same spline with a unit apex, which is
+                # exact because the spline is linear in its control values.
+                # same rule the loop above uses to place d_apex: dst == 0 is the apex
+                unit_apex = np.array(
+                    [1.0 if dst == 0 else 0.0 for dst in spline_params])
+                shape = np.clip(
+                    Spline(x=evasion_points[:, 0], y=unit_apex)(evasion_s), 0, 1)
+                capped = min(abs(d_apex), self._max_apex_within_bounds(
+                    shape, evasion_s, gb_wpnts, wpnt_dist, more_space))
+                d_apex = np.sign(d_apex) * capped
+                evasion_d = d_apex * shape
+            elif d_apex < 0:
                 evasion_d = np.clip(spatial_spline(evasion_s), d_apex, 0)
             else:
                 evasion_d = np.clip(spatial_spline(evasion_s), 0, d_apex)
@@ -536,7 +601,10 @@ class ObstacleSpliner(Node):
                     tb_dist = gb_wpnts[gb_wpnt_i].d_left if more_space == "left" else gb_wpnts[gb_wpnt_i].d_right
                     if abs(evasion_d[i]) > abs(tb_dist) - self.spline_bound_mindist:
                         self.get_logger().info(
-                            "Evasion trajectory too close to TRACKBOUNDS, aborting evasion"
+                            "Evasion trajectory too close to TRACKBOUNDS, aborting evasion "
+                            f"(s={evasion_s[i]:.2f} side={more_space} d={evasion_d[i]:+.4f} "
+                            f"apex={d_apex:+.4f} bound={abs(tb_dist):.4f} "
+                            f"over={abs(evasion_d[i]) - (abs(tb_dist) - self.spline_bound_mindist):+.6f})"
                         )
                         danger_flag = True
                         break

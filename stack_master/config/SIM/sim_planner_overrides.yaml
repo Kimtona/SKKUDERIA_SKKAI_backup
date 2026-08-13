@@ -6,28 +6,21 @@
 
 spline_planner:
   ros__parameters:
-    # Tuned by measuring ego-to-opponent centre distance at closest approach, not
-    # by watching state transitions: the car reaches OVERTAKE and completes laps
-    # just the same while driving straight through the opponent, so lap counts and
-    # state logs prove nothing here.
+    # NOTE: everything in this file was inert until 2026-08-13. spline_planner
+    # registered its on-set-parameters callback AFTER declaring the parameters,
+    # so a params file set the ROS parameter -- `ros2 param get` reported it --
+    # while the node went on reading the Python attributes from its own
+    # __init__. Fixed in spline_planner.py by applying the declared values once.
+    # Any tuning here that predates that fix was never actually measured.
     #
-    # The default 0.2 m puts the evasion line 0.29999 m from a parked opponent,
-    # a hair under state_machine's lateral_width_ot_m (0.3 m), so _check_ofree
-    # rejects it every cycle and the car never commits. Too large is worse: the
-    # spline then breaches the track bounds, spline_planner logs "Evasion
-    # trajectory too close to TRACKBOUNDS, aborting evasion" and publishes an
-    # EMPTY waypoint array, which looks identical to having no obstacle at all.
-    #
-    # This value is TRACK-DEPENDENT. Usable lateral room is
-    #     min(d_left | d_right) over the spline's span  -  spline_bound_mindist
-    #
-    #     hangar_1905_v0   1.366 m   <- tuned for this one
-    #     glc_ot_ez        0.586 m   needs ~0.50
-    #     GLC_smile_small  0.364 m   too narrow; aborts on nearly every approach
-    #
-    # Re-measure before trusting this on another map -- too large aborts, too small
-    # never commits, and both failure modes look like normal driving from the logs.
-    evasion_dist: 0.80
+    # evasion_dist is the lateral clearance the apex is placed at beyond the
+    # obstacle's edge. 0.80 was picked long ago against a parked opponent and
+    # never took effect; the first run that actually applied it spent 67% of the
+    # time TRAILING and completed one lap, because an apex that large is capped
+    # by the track bounds and then rejected by the state machine's _check_ofree.
+    # The node default that had silently been in force instead, 0.4, is what the
+    # passing step 2 and step 3 runs were measured on, so keep it explicit here.
+    evasion_dist: 0.40
 
     # Pre-apex control points, lengthened from the node defaults of 3.0/2.0/1.0.
     #
@@ -63,3 +56,29 @@ spline_planner:
     pre_apex_0: 6.0
     pre_apex_1: 4.0
     pre_apex_2: 2.5
+
+    # Cap the apex at the largest one the track bounds allow instead of throwing
+    # the whole evasion away when it does not fit.
+    #
+    # The TRACKBOUNDS check rejects the entire spline as soon as one sample sits
+    # within spline_bound_mindist of its bound, and publishes an EMPTY waypoint
+    # array -- indistinguishable in the logs from having no obstacle at all. It
+    # fired 27 times over a 178 s run even on runs that otherwise overtake fine.
+    #
+    # It never had to be discovered that way. The spline's control values are
+    # zero everywhere but the apex, scipy's InterpolatedUnivariateSpline is
+    # linear in those values, and clip(k*f, 0, k) == k*clip(f, 0, 1) -- both
+    # verified numerically to 1e-15 -- so evasion_d[i] == d_apex * shape[i] with
+    # shape independent of d_apex. The check is then just
+    #     |d_apex| <= (|tb_i| - spline_bound_mindist) / shape[i]  for all i
+    # and the tightest bound is the answer in closed form. Capping to it makes
+    # the abort unreachable by construction; the check stays as a safety net.
+    #
+    # A capped apex that is too small to clear the opponent is not a hazard: the
+    # state machine's _check_ofree already refuses OVERTAKE when the evasion line
+    # passes within lateral_width_ot_m of the obstacle. A reduced apex is strictly
+    # more information than an empty array.
+    #
+    # SIM-scoped because spline_planner is shared with the real car; the node
+    # default is False, so the real car is unaffected.
+    adaptive_apex: true
