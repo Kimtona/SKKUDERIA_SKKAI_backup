@@ -55,6 +55,20 @@ class FTG_Controller(Node):
         self.scan_pub = self.create_publisher(MarkerArray, '/scan_proc/markers', 10)
         self.best_gap = self.create_publisher(MarkerArray, '/best_gap/markers', 10)
 
+    def update_params(self, debug, safety_radius, max_lidar_dist, max_speed, range_offset, track_width) -> None:
+        """Live update from dynamic reconfigure (controller_manager.l1_param_cb)."""
+        self.DEBUG = debug
+        self.SAFETY_RADIUS = safety_radius
+        self.MAX_LIDAR_DIST = max_lidar_dist
+        self.MAX_SPEED = max_speed
+        self.range_offset = range_offset
+        self.track_width = track_width
+        scale = 0.6
+        self.CORNERS_SPEED = 0.3 * self.MAX_SPEED * scale
+        self.MILD_CORNERS_SPEED = 0.45 * self.MAX_SPEED * scale
+        self.STRAIGHTS_SPEED = 0.8 * self.MAX_SPEED * scale
+        self.ULTRASTRAIGHTS_SPEED = self.MAX_SPEED * scale
+
     def _preprocess_lidar(self, ranges) -> np.ndarray:
         """ 
         Preprocess the LiDAR scan array.
@@ -70,6 +84,7 @@ class FTG_Controller(Node):
             numpy.ndarray: The preprocessed LiDAR scan array.
         """
         self.radians_per_elem = (1.5 * np.pi) / len(ranges)
+        self.n_beams = len(ranges)
         # we won't use the LiDAR data from directly behind us
         # full angle is -135 135
         # every point in the array is
@@ -112,8 +127,13 @@ class FTG_Controller(Node):
         
         #Find the largest gap
         gap_left, gap_right = self._find_largest_gap(ranges=proc_ranges, radius=radius)
-        gap_left += self.range_offset - 180
-        gap_right += self.range_offset - 180
+        # gap_left += self.range_offset - 180
+        # gap_right += self.range_offset - 180
+        # 180 was 45deg worth of beams for the original 1080-beam lidar; n_beams/6 generalizes
+        # (45deg / (270deg/n_beams)) so straight-ahead maps to 0 steering for any beam count (GL-5: 1501)
+        center_correction = int(round(self.n_beams / 6))
+        gap_left += self.range_offset - center_correction
+        gap_right += self.range_offset - center_correction
         gap_middle = int((gap_right + gap_left) / 2)
         #Calculate cartesian point of the best point position from the lidar measurements in laser frame
         best_y = np.cos(gap_middle * self.radians_per_elem) * radius

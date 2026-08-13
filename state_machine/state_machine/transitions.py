@@ -104,7 +104,10 @@ def SpliniFTGOnlyTransition(state_machine: StateMachine) -> StateType:
     if state_machine._check_only_ftg_zone:
         return StateType.FTGONLY
     else:
-        if state_machine._check_close_to_raceline and state_machine._check_gbfree:
+        # if state_machine._check_close_to_raceline and state_machine._check_gbfree:
+        # release to global tracking as soon as the forward wedge is clear (obstacle
+        # beyond ftg_release_angle_deg counts as passed) -- no raceline-proximity wait
+        if state_machine._check_gbfree:
             return StateType.GB_TRACK
         else:
             return StateType.FTGONLY

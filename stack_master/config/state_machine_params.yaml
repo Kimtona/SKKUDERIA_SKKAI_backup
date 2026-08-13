@@ -16,10 +16,15 @@ state_machine:
     lateral_width_gb_m: 1.1 # [m] lateral width within which we consider obstacles to be on the overtaking line -> NOW DYNAMIC RECONFIGURABLE
     gb_horizon_m: 6.9 # [m] horizon considered for the global waypoints to check for obstacles
 
-    overtaking_horizon_m: 6.9 # [m] horizon considered for overtaking
+    overtaking_horizon_m: 6.0 #6.9 # [m] horizon considered for overtaking
     lateral_width_ot_m: 0.3 # [m] lateral width within which we consider opponents to be on the overtaking line -> NOW DYNAMIC RECONFIGURABLE
     splini_hyst_timer_sec: 0.2 # [s] time we have to wait between switching from overtaking on one side to the other -> NOW DYNAMIC RECONFIGURABLE
 
     ftg_threshold_speed: 0.1 # [m/s] speed threshold below which we start a timer for activating FTG
-    ftg_timer_sec: 3. # [s] time we have to stay slower than the `ftg_threshold_speed` threshold before we activate FTG
+    # ftg_timer_sec: 3. # [s] time we have to stay slower than the `ftg_threshold_speed` threshold before we activate FTG
+    # ftg_timer_sec: 0.1 # [s] 0.1 s * 40 Hz = counter threshold 4 -> near-instant FTG when stuck
+    ftg_timer_sec: 3. # [s] emergency-only: give TRAILING->OVERTAKE time to engage before FTG takes over
+    # ftg_active: False # enable FTG emergency evasion (TRAILING -> FTGONLY when stuck) -> DYNAMIC RECONFIGURABLE
+    ftg_active: True # enable FTG emergency evasion (TRAILING -> FTGONLY when stuck) -> DYNAMIC RECONFIGURABLE
+    ftg_release_angle_deg: 70. # [deg] obstacle bearing beyond this = passed/not blocking -> early release back to GB_TRACK -> DYNAMIC RECONFIGURABLE
 

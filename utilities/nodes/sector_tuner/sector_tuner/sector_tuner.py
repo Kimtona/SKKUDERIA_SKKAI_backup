@@ -1,4 +1,5 @@
 import rclpy
+from copy import deepcopy
 from rcl_interfaces.msg import ParameterType, ParameterDescriptor, FloatingPointRange
 from rclpy.node import Node
 from f110_msgs.msg import WpntArray
@@ -113,7 +114,13 @@ class SectorTuner(Node):
         s
             s parameter whose sector we want to find
         """
-        hl_change = 10
+        # hl_change = 10
+        # units are WAYPOINT INDICES (0.1 m spacing) -> 10 = 1 m blend each side of the
+        # boundary; at 5-6 m/s a 0.2-scaling step over 2 m commands ~3 m/s^2, above the
+        # throttle_interpolator's 2.5 m/s^2 cap -> saturation jerk. 15 = 1.5 m per side.
+        # CONSTRAINT: hl_change must stay < shortest_sector_length/2 (test0810 min sector
+        # = 37 wpnts -> limit 18) or the plateau conditions invert and blends overlap.
+        hl_change = 15
 
         if self.n_sectors > 1:
             for i in range(self.n_sectors):
@@ -172,8 +179,13 @@ class SectorTuner(Node):
         Scales the global waypoints' velocities
         """
         if self.glb_wpnts_scaled is None:
-            self.glb_wpnts_scaled = self.glb_wpnts_og
-            self.glb_wpnts_sp_scaled = self.glb_wpnts_sp_og
+            # self.glb_wpnts_scaled = self.glb_wpnts_og
+            # self.glb_wpnts_sp_scaled = self.glb_wpnts_sp_og
+            # ^ aliasing bug: without a copy, scaled IS og until the next /global_waypoints
+            #   msg (republished only every 10 s), so vx_mps *= scaling compounds every
+            #   0.5 s tick -> speeds decay toward 0 for the first ~10 s after launch
+            self.glb_wpnts_scaled = deepcopy(self.glb_wpnts_og)
+            self.glb_wpnts_sp_scaled = deepcopy(self.glb_wpnts_sp_og)
 
         for i, wpnt  in enumerate(self.glb_wpnts_og.wpnts):
             vel_scaling = self.get_vel_scaling(i)
