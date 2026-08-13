@@ -19,17 +19,47 @@ spline_planner:
     # EMPTY waypoint array, which looks identical to having no obstacle at all.
     #
     # This value is TRACK-DEPENDENT. Usable lateral room is
-    #     min(d_left | d_right) over the spline's +/-4 m span  -  spline_bound_mindist
+    #     min(d_left | d_right) over the spline's span  -  spline_bound_mindist
     #
     #     hangar_1905_v0   1.366 m   <- tuned for this one
     #     glc_ot_ez        0.586 m   needs ~0.50
     #     GLC_smile_small  0.364 m   too narrow; aborts on nearly every approach
     #
-    # 0.80 m is tuned for hangar_1905_v0 with a parked opponent: 4 of 4 approaches
-    # cleared at 0.91-0.96 m centre-to-centre, zero TRACKBOUNDS aborts, every
-    # approach in OVERTAKE. Cars are 0.2032 m wide, so anything under ~0.25 m is an
-    # overlap. At 0.50 on the same map it was 2 of 3, one of them at 0.289 m.
-    #
     # Re-measure before trusting this on another map -- too large aborts, too small
     # never commits, and both failure modes look like normal driving from the logs.
     evasion_dist: 0.80
+
+    # Pre-apex control points, lengthened from the node defaults of 3.0/2.0/1.0.
+    #
+    # The spline is built through [pre_2, pre_1, pre_0, apex, post_0, post_1,
+    # post_2] with d = 0 everywhere except the apex, so pre_apex_2 is the point
+    # where the evasion is pinned back to the raceline. At the default 1.0 the
+    # ENTIRE lateral move is compressed into the last metre before the apex.
+    #
+    # That is survivable against a parked obstacle, whose apex sits still and
+    # lets the ego arrive. Against a moving one the apex recedes at the
+    # opponent's speed, so the ego sits outside that last metre almost the whole
+    # chase and is asked for nothing. Measured on hangar_1905_v0 as the fraction
+    # of the apex offset actually demanded at the ego's own position:
+    #
+    #   apex ahead      3.0/2.0/1.0      6.0/4.0/2.5
+    #     0.0-1.0 m         0.40             0.94
+    #     1.0-1.5 m         0.13             0.47
+    #     1.5-2.0 m         0.03             0.19
+    #     2.0-3.0 m         0.06             0.16
+    #
+    # and end to end: max offset demanded at the ego 0.228 -> 0.513 m, max offset
+    # the ego actually reached 0.245 -> 0.519 m. The controller was never the
+    # problem -- it tracked the reference to within 0.10 m throughout; there was
+    # simply no reference to track.
+    #
+    # This is what makes step 3 pass: 178 s with zero collisions and five clean
+    # passes of a 1.5 m/s opponent at 0.453-0.517 m centre-to-centre, against a
+    # rear-end within 92 s before.
+    #
+    # SIM-scoped. The same reasoning applies to the real car, but the numbers
+    # come from gym's opponent and hangar's geometry, so it needs its own pass
+    # against real data.
+    pre_apex_0: 6.0
+    pre_apex_1: 4.0
+    pre_apex_2: 2.5
