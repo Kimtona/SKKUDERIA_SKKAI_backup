@@ -36,7 +36,8 @@ class StateMachine(Node):
         # PARAMETER DECLARATION
         self.params = StateMachineParams(self)
         
-        self.ftg_disabled = True # TODO fix with global prams?
+        # self.ftg_disabled = True # TODO fix with global prams?
+        self.ftg_disabled = not self.params.ftg_active  # gated by `ftg_active` param (dynamic)
 
         # update on parameter changes for rate
         self.add_on_set_parameters_callback(self.params.parameters_callback)
@@ -65,6 +66,7 @@ class StateMachine(Node):
         
         self.cur_s = None
         self.cur_d = None
+        self.cur_vs = 0.0  # frenet s-velocity, needed by _check_ftg
         self.create_subscription(Odometry, '/car_state/frenet/odom',self.car_state_frenet_cb, 10) # car frenet coordinates
         while self.cur_s is None:
             self.get_logger().info("Waiting for car state frenet message", throttle_duration_sec=0.5)
@@ -153,6 +155,7 @@ class StateMachine(Node):
     def car_state_frenet_cb(self, msg: Odometry):
         self.cur_s = msg.pose.pose.position.x
         self.cur_d = msg.pose.pose.position.y
+        self.cur_vs = msg.twist.twist.linear.x  # was discarded; needed by _check_ftg
 
     def avoidance_cb(self, data: OTWpntArray):
         """Subscribes to spliner waypoints"""
@@ -256,6 +259,11 @@ class StateMachine(Node):
                 obs_d = obs.d_center
                 # Get d wrt to mincurv from the overtaking line
                 if abs(obs_d) < self.params.lateral_width_gb_m:
+                    # obstacles already beside the car (bearing > release angle off the
+                    # nose) no longer block: releases FTG/trailing as soon as we are past
+                    bearing = np.arctan2(abs(obs_d - self.cur_d), gap)
+                    if bearing > np.radians(self.params.ftg_release_angle_deg):
+                        continue
                     gb_free = False
                     #self.get_logger().info(f"GB_FREE False, obs dist to ot lane: {obs_d} m")
                     break
@@ -293,12 +301,17 @@ class StateMachine(Node):
     def _check_ftg(self) -> bool:
         # If we have been standing still for 3 seconds inside TRAILING -> FTG
         threshold = self.params.ftg_timer_sec * self.params.rate_hz
-        if self.ftg_disabled:
+        # if self.ftg_disabled:
+        if not self.params.ftg_active:  # read the param directly so `ros2 param set` takes effect live
             return False
         else:
-            if self.cur_state == StateType.TRAILING and self.cur_vs < self.params.ftg_threshold_speed:
+            # if self.cur_state == StateType.TRAILING and self.cur_vs < self.params.ftg_threshold_speed:
+            # cur_state was a ROS1 leftover (never assigned in ROS2 port -> AttributeError); ROS2 uses self.state
+            if self.state == StateType.TRAILING and self.cur_vs < self.params.ftg_threshold_speed:
                 self.ftg_counter += 1
-                self.get_logger().warn(f"[{self.name}] FTG counter: {self.ftg_counter}/{threshold}")
+                # self.get_logger().warn(f"[{self.name}] FTG counter: {self.ftg_counter}/{threshold}")
+                # self.name was never set in the ROS2 port (ROS1 leftover) -> AttributeError killed the node
+                self.get_logger().warn(f"[{self.get_name()}] FTG counter: {self.ftg_counter}/{threshold}")
             else:
                 self.ftg_counter = 0
 
@@ -379,7 +392,11 @@ class StateMachine(Node):
         self.parameter_client.wait_for_service()
         self.n_ot_sectors = None
         self.ot_param_names = None
-        self.ot_sectors = None
+        # self.ot_sectors = None
+        # main-loop callbacks already run while this init spins below; with an obstacle
+        # visible at boot the TRAILING transition iterates ot_sectors before it is filled
+        # -> 'NoneType' object is not iterable. Empty list = safe "no OT sectors yet".
+        self.ot_sectors = []
         
         request = GetParameters.Request()
         request.names = ['n_sectors']
@@ -457,7 +474,8 @@ class StateMachine(Node):
 
         # publish the real waypoints unconditionally (moved up from below the marker loop)
         if len(loc_wpnts.wpnts) == 0:
-            self.get_logger().warn("No local waypoints published...")
+            pass
+            #self.get_logger().warn("No local waypoints published...")
         else:
             self.loc_wpnt_pub.publish(loc_wpnts)
 

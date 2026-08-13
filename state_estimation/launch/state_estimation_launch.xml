@@ -33,6 +33,15 @@
             <param name="use_sim_time" value="$(var use_sim_time)" />
         </node>
 
+        <!-- Bridge RViz "2D Pose Estimate" (/initialpose) to Cartographer's
+             finish_trajectory + start_trajectory services for instant relocalization -->
+        <node name="initialpose_to_cartographer" pkg="state_estimation"
+            exec="initialpose_to_cartographer" output="screen">
+            <param name="configuration_directory" value="$(var slam_config_path)" />
+            <param name="configuration_basename" value="f110_2d_loc.lua" />
+            <param name="use_sim_time" value="$(var use_sim_time)" />
+        </node>
+
         <!-- NOTE: no cartographer_occupancy_grid_node here on purpose — map_server
              already publishes /map from the saved PNG; running both makes RViz
              flicker between the static and live grids. -->

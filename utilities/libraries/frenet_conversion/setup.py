@@ -15,8 +15,8 @@ setup(
     zip_safe=True,
     maintainer='kuehnej',
     maintainer_email='kuehnej@ethz.ch',
-    description='TODO: Package description',
-    license='TODO: License declaration',
+    description='Python and C++ Cartesian/Frenet conversion utilities.',
+    license='MIT',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [

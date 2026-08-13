@@ -184,7 +184,8 @@ class StateMachineParams:
             read_only=False,
             type=ParameterType.PARAMETER_DOUBLE,
             floating_point_range=[FloatingPointRange(
-                from_value=1.0,
+                # from_value=1.0,  # lowered so counter can be as low as rate_hz*0.1 = 4 ticks
+                from_value=0.1,
                 to_value=5.0,
                 step=0.1)]
         )
@@ -202,6 +203,26 @@ class StateMachineParams:
         )
         node.set_descriptor("ftg_threshold_speed", descriptor=descriptor)
         self.ftg_threshold_speed: float = node.get_parameter("ftg_threshold_speed").value
+
+        descriptor = ParameterDescriptor(
+            description="enable the FTG emergency evasion: when stuck in TRAILING below ftg_threshold_speed for ftg_timer_sec, switch to FTGONLY\n",
+            read_only=False,
+            type=ParameterType.PARAMETER_BOOL,
+        )
+        node.set_descriptor("ftg_active", descriptor=descriptor)
+        self.ftg_active: bool = node.get_parameter("ftg_active").value
+
+        descriptor = ParameterDescriptor(
+            description="obstacles whose bearing off the nose exceeds this angle count as passed (not blocking) -> releases FTG/trailing early\n",
+            read_only=False,
+            type=ParameterType.PARAMETER_DOUBLE,
+            floating_point_range=[FloatingPointRange(
+                from_value=30.0,
+                to_value=90.0,
+                step=1.0)]
+        )
+        node.set_descriptor("ftg_release_angle_deg", descriptor=descriptor)
+        self.ftg_release_angle_deg: float = node.get_parameter("ftg_release_angle_deg").value
 
     def parameters_callback(self, parameters: List[Parameter]) -> SetParametersResult:
         for param in parameters:

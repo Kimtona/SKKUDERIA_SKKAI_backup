@@ -14,7 +14,6 @@ from scipy.linalg import block_diag
 
 import rclpy
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
 from rcl_interfaces.msg import ParameterDescriptor, ParameterType, FloatingPointRange, IntegerRange, SetParametersResult
 from rclpy.parameter import Parameter
 
@@ -285,15 +284,14 @@ class StaticDynamic(Node):
         """
         Initialize the node, subscribe to topics, and create publishers and service proxies.
         """
-        super().__init__('tracking',
-                         allow_undeclared_parameters=True,
-                         automatically_declare_parameters_from_overrides=True)  # type: ignore
+        super().__init__('tracking')
+
+        self.declare_parameter("measure", False)
+        self.declare_parameter("from_bag", False)
 
         # ------------ Tunable Parameters ------------
-        # self.declare_parameter("rate", 40, descriptor=ParameterDescriptor(
-        #     description="rate at which the node is running"))
-        self.declare_parameter("rate", 20, descriptor=ParameterDescriptor(
-            description="rate at which the node is running"))  # 40->20 to match detect; sets Kalman dt + loop timer
+        self.declare_parameter("rate", 40, descriptor=ParameterDescriptor(
+            description="rate at which the node is running"))
         self.declare_parameter("P_vs", 0.2, descriptor=ParameterDescriptor(
             description="proportional gain for the vs"))
         self.declare_parameter("P_d", 0.02, descriptor=ParameterDescriptor(
@@ -326,6 +324,10 @@ class StaticDynamic(Node):
         ObstacleSD.max_std = 0.2
         self.dist_deletion = 7
         self.dist_infront = 8
+        # slack for the FOV visibility check on unmatched tracks: beams reaching to
+        # within this distance of the remembered position count as seeing that spot
+        # (covers localization error + beam stopping on the ghost's own wall)
+        self.fov_dist_margin = 0.4
         self.vs_reset = 0.1
         self.aggro_multiplier = 2
         self.debug_mode = False
@@ -382,9 +384,9 @@ class StaticDynamic(Node):
             "var_pub").get_parameter_value().integer_value
 
         self.from_bag = self.get_parameter(
-            "/from_bag").get_parameter_value().bool_value
+            "from_bag").get_parameter_value().bool_value
         self.measuring = self.get_parameter(
-            "/measure").get_parameter_value().bool_value
+            "measure").get_parameter_value().bool_value
         
         # Opponent State varibles
         Opponent_state.rate = self.update_rate
@@ -467,7 +469,7 @@ class StaticDynamic(Node):
         self.cs_odom_sub = self.create_subscription(
             Odometry, '/car_state/odom', self.carStateGlobCallback, 10)
         self.scan_sub = self.create_subscription(
-            LaserScan, '/scan', self.scansCallback, qos_profile_sensor_data)
+            LaserScan, '/scan', self.scansCallback, 10)
 
         # ------------ Publishers ------------
         self.static_dynamic_marker_pub = self.create_publisher(
@@ -507,7 +509,7 @@ class StaticDynamic(Node):
 
         if self.measuring:
             end = time.perf_counter()
-            self.latency_pub.publish(end-start)
+            self.latency_pub.publish(Float32(data=float(end-start)))
 
         self.publishObstacles()
         self.publish_Marker()
@@ -934,7 +936,8 @@ class StaticDynamic(Node):
         if self.debug_mode:
             print("FIELD OF VIEW:")
             print("index: ", obstacle_scan_idx)
-            print("angle: ", np.degres(bearing_angle))
+            # print("angle: ", np.degres(bearing_angle))  # np.degres: typo crashed the node when debug_mode was on
+            print("angle: ", np.degrees(bearing_angle))
             print("Other lidar scans: ",
                   str([f"{sc:.2f}" for sc in self.scans[obstacle_scan_idx - 10:obstacle_scan_idx + 10]]))
             print("dist: ", dist_to_obs)
@@ -944,7 +947,14 @@ class StaticDynamic(Node):
         low_index = max(0, obstacle_scan_idx - 4)  # bounds checks
         high_index = min(obstacle_scan_idx + 4, largest_scan_idx)
         scan_dists_of_interest = self.scans[low_index:high_index]
-        if dist_to_obs < min(scan_dists_of_interest):
+        # if dist_to_obs < min(scan_dists_of_interest):
+        # Strict `<` made wall-adjacent ghost tracks immortal: beams hit the real wall
+        # at ~the ghost's own distance, so the check never passed and the TTL never
+        # decremented. Allow a margin so "beams reach (almost) as far as the track's
+        # position" counts as seeing that spot. A truly occluded opponent still returns
+        # False (occluder beams are much shorter); real obstacles are unaffected since
+        # association resets their TTL every matched cycle.
+        if dist_to_obs - self.fov_dist_margin < min(scan_dists_of_interest):
             return True
 
         # Obstacle is obscured, so not in field of view.
@@ -1117,3 +1127,7 @@ def main():
     rclpy.spin(tracker)
     tracker.destroy_node()
     rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

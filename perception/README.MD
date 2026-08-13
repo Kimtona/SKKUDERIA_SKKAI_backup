@@ -1,10 +1,29 @@
 # Opponent Detection & Tracking
 ![Perception Architecture](./misc/perception_arch.png)
 
-This directory contains the Opponent Detection & Tracking system of the ForzaETH F110 Team. The Opponent Detection system is divided into two main components, namely the Opponent Detection and the Opponent Trackeing subsystems.  
-The Opponent Detection system is only executed when the car is in headtohead mode. After a successful launch, you should see the following messages from the Perception system:
-- `[Opponent Detection]: Ready`
+This directory contains the Opponent Detection & Tracking system of the ForzaETH F110 Team. It is divided into C++ LiDAR detection and Python opponent tracking.
+
+The C++ `detect` node ports Unicorn's adaptive clustering, occupancy-map filtering, and L-shape fitting while retaining SKKUDERIA's topic contract. Its `main()` uses plain `rclcpp::spin`, so scan, waypoint, TF, and timer callbacks execute serially without an application mutex. The former detector remains available as `detect_python` for bag-based comparisons.
+
+Detection publishes `/perception/detection/raw_obstacles`; the existing tracker consumes it, classifies obstacles as static or dynamic, and performs trajectory prediction. This migration does not change the tracker/planner interface.
+
+The perception system is only executed in head-to-head mode. After a successful launch, you should see the following messages:
+- `C++ LiDAR detector ready at 40.0 Hz ...`
 - `[Opponent Tracking]: Ready`
+
+## Build and run
+
+```bash
+source /opt/ros/humble/setup.bash
+export PYTHONNOUSERSITE=1
+colcon build --symlink-install --packages-up-to perception
+source install/setup.bash
+ros2 launch perception perception_launch.xml \
+  param_file:=$(ros2 pkg prefix stack_master)/share/stack_master/config/opponent_tracker_params.yaml \
+  map_name:=hangar_1905_v0
+```
+
+Use `detector_exec:=detect_python` only to run the legacy implementation against the same bag. For Jetson validation, enable `measure` under the `detect` node and inspect `/perception/detection/latency_ms`; also verify the 40 Hz output rate, TF warnings, obstacle counts, CPU load, and downstream `/perception/obstacles` behavior before racing.
 
 ## Overview
 This section provides a short overview of the two subsystems.

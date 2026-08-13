@@ -111,7 +111,17 @@ class Controller(Node):
         self.position_in_map = None
         self.position_in_map_frenet = None
         self.waypoint_safety_counter = 0
-        
+        self.scan = None
+
+        # command-level speed slew limiter: smooths discrete jumps in the commanded speed
+        # (FTGONLY -> GB_TRACK hand-off, FTG speed tiers, sector-scaling steps) BEFORE the
+        # vesc-side throttle_interpolator sees them. Asymmetric on purpose: braking
+        # (downward steps) passes at a much higher limit so obstacle/e-stop authority is kept.
+        # Live-tunable: ros2 param set /controller cmd_accel_limit 1.5
+        self.declare_parameter('cmd_accel_limit', 2.0)   # [m/s^2] max commanded speed increase
+        self.declare_parameter('cmd_decel_limit', 8.0)   # [m/s^2] max commanded speed decrease
+        self.last_cmd_speed = 0.0
+
         # buffers for improved computation
         self.waypoint_array_buf = MarkerArray()
         self.markers_buf = [Marker() for _ in range(1000)]
@@ -122,10 +132,12 @@ class Controller(Node):
             self.get_logger().info("Initializing MAP  controller")
             self.init_map_controller()
             self.prioritize_dyn = self.l1_params["prioritize_dyn"]
+            self.init_ftg_controller()  # FTG fallback for the FTGONLY state
         elif self.mode == "PP":
             self.get_logger().info("Initializing PP controller")
             self.init_pp_controller()
             self.prioritize_dyn = self.l1_params["prioritize_dyn"]
+            self.init_ftg_controller()  # FTG fallback for the FTGONLY state
         elif self.mode == "FTG":
             self.get_logger().info("Initializing FTG controller")
             self.init_ftg_controller()
@@ -329,12 +341,35 @@ class Controller(Node):
     def init_ftg_controller(self):
 
         #TODO fix to work without alternative value
-        self.state_machine_debug = self.get_remote_parameter('state_machine', 'debug')
-        self.state_machine_safety_radius = self.get_remote_parameter('state_machine', 'safety_radius')
-        self.state_machine_max_lidar_dist = self.get_remote_parameter('state_machine', 'max_lidar_dist')
-        self.state_machine_max_speed = self.get_remote_parameter('state_machine', 'max_speed')
-        self.state_machine_range_offset = self.get_remote_parameter('state_machine', 'range_offset')
-        self.state_machine_track_width = self.get_remote_parameter('state_machine', 'track_width')
+        # self.state_machine_debug = self.get_remote_parameter('state_machine', 'debug')
+        # self.state_machine_safety_radius = self.get_remote_parameter('state_machine', 'safety_radius')
+        # self.state_machine_max_lidar_dist = self.get_remote_parameter('state_machine', 'max_lidar_dist')
+        # self.state_machine_max_speed = self.get_remote_parameter('state_machine', 'max_speed')
+        # self.state_machine_range_offset = self.get_remote_parameter('state_machine', 'range_offset')
+        # self.state_machine_track_width = self.get_remote_parameter('state_machine', 'track_width')
+        # The ROS2 state_machine never declared the params above, so the remote fetch hangs;
+        # declare them locally on this node instead (overridable via yaml/launch as ftg_*)
+        ftg_defaults = {
+            'ftg_debug': False,
+            # 'ftg_safety_radius': 40,     # [ranges] bubble size, helps not to cut corners
+            # 'ftg_safety_radius': 56,     # [beams] 10deg edge bubble (40-beam equivalent on GL-5's 1501)
+            'ftg_safety_radius': 100,       # [beams] ~15deg edge bubble; raised for more obstacle clearance during FTG
+            'ftg_max_lidar_dist': 9.0,     # [m]
+            'ftg_max_speed': 4.0,          # [m/s] kept low: FTG is an emergency behavior
+            # 'ftg_range_offset': 180,     # only consider scan[range_offset:-range_offset]
+            'ftg_range_offset': 375,       # only consider scan[range_offset:-range_offset]; 45deg per side = n_beams/6 (GL-5: 1501 beams -> 250)
+            # 'ftg_track_width': 2.6,      # [m] approx gap distance on a straight
+            'ftg_track_width': 1.65,       # [m] measured from test0809 global waypoints (mean d_left+d_right; min 1.05, max 2.24)
+        }
+        for name, default in ftg_defaults.items():
+            if not self.has_parameter(name):
+                self.declare_parameter(name, default)
+        self.state_machine_debug = self.get_parameter('ftg_debug').value
+        self.state_machine_safety_radius = self.get_parameter('ftg_safety_radius').value
+        self.state_machine_max_lidar_dist = self.get_parameter('ftg_max_lidar_dist').value
+        self.state_machine_max_speed = self.get_parameter('ftg_max_speed').value
+        self.state_machine_range_offset = self.get_parameter('ftg_range_offset').value
+        self.state_machine_track_width = self.get_parameter('ftg_track_width').value
 
         self.get_logger().info(f"FTG Controller parameters: {self.state_machine_debug}, {self.state_machine_safety_radius}, {self.state_machine_max_lidar_dist}, {self.state_machine_max_speed}, {self.state_machine_range_offset}, {self.state_machine_track_width}")
 
@@ -417,6 +452,17 @@ class Controller(Node):
             self.pp_controller.trailing_i_gain = self.get_parameter('trailing_i_gain').value
             self.pp_controller.trailing_d_gain = self.get_parameter('trailing_d_gain').value
             self.pp_controller.blind_trailing_speed = self.get_parameter('blind_trailing_speed').value
+
+        # push ftg_* params into the live FTG_Controller (it copies them at init, so
+        # without this a `ros2 param set /controller ftg_*` would silently do nothing)
+        if getattr(self, 'ftg_controller', None) is not None:
+            self.ftg_controller.update_params(
+                debug=self.get_parameter('ftg_debug').value,
+                safety_radius=self.get_parameter('ftg_safety_radius').value,
+                max_lidar_dist=self.get_parameter('ftg_max_lidar_dist').value,
+                max_speed=self.get_parameter('ftg_max_speed').value,
+                range_offset=self.get_parameter('ftg_range_offset').value,
+                track_width=self.get_parameter('ftg_track_width').value)
         self.get_logger().info("Updated parameters")
             
     def scan_cb(self, data: LaserScan):
@@ -453,6 +499,8 @@ class Controller(Node):
 
     def odom_cb(self, data: Odometry):
         self.speed_now = data.twist.twist.linear.x
+        # FTG scales its gap-detection radius with the current speed
+        self.ftg_controller.set_vel(self.speed_now)
 
     def car_state_cb(self, data: PoseStamped):
         x = data.pose.position.x
@@ -515,7 +563,7 @@ class Controller(Node):
         self.waypoint_safety_counter += 1
         print(self.waypoint_safety_counter, self.rate, self.state_machine_rate)
         if self.waypoint_safety_counter >= self.rate/self.state_machine_rate* 10: #we can use the same waypoints for 5 cycles
-            self.get_logger().warning("[controller_manager] Received no local wpnts. STOPPING!!")
+            #self.get_logger().warning("[controller_manager] Received no local wpnts. STOPPING!!")
             speed = 0
             steering_angle = 0
         self.map_controller.flag1 = False
@@ -549,7 +597,7 @@ class Controller(Node):
         
         self.waypoint_safety_counter += 1
         if self.waypoint_safety_counter >= self.rate/self.state_machine_rate* 10: #we can use the same waypoints for 5 cycles
-            self.get_logger().warning("[controller_manager] Received no local wpnts. STOPPING!!")
+            #self.get_logger().warning("[controller_manager] Received no local wpnts. STOPPING!!")
             speed = 0
             steering_angle = 0
         self.pp_controller.flag1 = False
@@ -567,7 +615,7 @@ class Controller(Node):
 
     def ftg_cycle(self):
         speed, steer = self.ftg_controller.process_lidar(self.scan.ranges)
-        self.get_logger().warning("[STATE MACHINE] FTGONLY!!!")
+        #self.get_logger().warning("[STATE MACHINE] FTGONLY!!!")
         return speed, steer
     
     def create_pid_msg(self, should, actual, error, d_value, i_value, input):
@@ -585,18 +633,36 @@ class Controller(Node):
     # MAIN LOOP #
     #############
     def control_loop(self):
-        if self.mode == "MAP":
+        # if self.mode == "MAP":
+        # state machine publishes str(StateType.X), hence the "StateType." prefix (see state_cb usage below)
+        if self.state == "StateType.FTGONLY" and self.scan is not None:
+            speed, steer = self.ftg_cycle()
+        elif self.mode == "MAP":
             speed, steer = self.map_cycle()
         elif self.mode == "PP":
             speed, steer = self.pp_cycle()
         elif self.mode == "FTG":
             speed, steer = self.ftg_cycle()
 
+        # slew-limit the commanded speed so state/mode switches and sector steps ramp
+        # instead of jumping (steering is left untouched: servo smoother handles it and
+        # limiting steering mid-corner is unsafe)
+        dt = 1.0 / self.rate
+        accel_lim = self.get_parameter('cmd_accel_limit').value
+        decel_lim = self.get_parameter('cmd_decel_limit').value
+        speed = np.clip(speed,
+                        self.last_cmd_speed - decel_lim * dt,
+                        self.last_cmd_speed + accel_lim * dt)
+        self.last_cmd_speed = float(speed)
+
         ack_msg = AckermannDriveStamped()
         ack_msg.header.stamp = self.get_clock().now().to_msg()
         ack_msg.header.frame_id = 'base_link'
-        ack_msg.drive.steering_angle = steer
-        ack_msg.drive.speed = speed
+        # ack_msg.drive.steering_angle = steer
+        # ack_msg.drive.speed = speed
+        # msg fields assert Python float; FTG returns np.float64 (np.clip) -> cast defensively for all branches
+        ack_msg.drive.steering_angle = float(steer)
+        ack_msg.drive.speed = float(speed)
         self.drive_pub.publish(ack_msg)
         
     ############################################MSG CREATION############################################
