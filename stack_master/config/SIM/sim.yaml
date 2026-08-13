@@ -69,18 +69,33 @@ bridge:
     # freezes the whole simulation, ego included.
     num_agent: 2
 
-    # ego starting pose on map
-    sx: 0.5
-    sy: 1.25
-    stheta: -0.7
+    # Starting poses. These are MAP-SPECIFIC and there is no guard: the bridge
+    # spawns the cars at these raw map coordinates whatever `map_name` says.
+    # Spawning off the raceline is not a cosmetic problem. f110_gym latches
+    # collisions -- base_classes.py check_ttc() returns True forever once
+    # `in_collision` is set and the speed has reached 0, and update_pose() then
+    # skips integration -- so a car that clips a wall on its first step is stuck
+    # for the rest of the run. With num_agent 2 that freezes the ego as well and
+    # the whole sim sits still while /drive keeps commanding a healthy speed.
+    #
+    # Values below are taken from hangar_1905_v0's own IQP raceline
+    # (stack_master/maps/hangar_1905_v0/global_waypoints.json); psi_rad in that
+    # file is already the map-frame yaw, so stheta is a straight copy.
+    # Re-derive them before running another map.
 
-    # opp starting pose on map
-    # On the GLC_smile_small raceline at s = 22.0 m, the widest symmetric point of
-    # the track (d_left 1.125 m / d_right 1.123 m), so there is room to evade on
-    # either side -- spline_planner wants evasion_dist 0.65 m.
-    sx1: -0.533
-    sy1: -1.178
-    stheta1: -0.716
+    # ego starting pose on map -- hangar_1905_v0 raceline s = 0.0 m
+    sx: 0.4732
+    sy: 0.5489
+    stheta: 0.0086
+
+    # opp starting pose on map -- hangar_1905_v0 raceline s = 12.0 m, on the long
+    # straight (d_left 1.70 m / d_right 0.40 m), 12 m ahead of the ego so there is
+    # room to approach it. Sitting on the raceline is deliberate: off it, the
+    # opponent falls outside spline_planner's obs_traj_tresh and never triggers
+    # an evasion at all.
+    sx1: 3.5300
+    sy1: 11.1000
+    stheta1: 1.5700
 
     # teleop
     kb_teleop: True
