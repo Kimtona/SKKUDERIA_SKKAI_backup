@@ -22,6 +22,7 @@ PATCHES=(
     "$GYM_ROS|f1tenth_gym_ros__agent-collisions.patch|agent_collisions as a bridge"
     "$GYM_ROS|f1tenth_gym_ros__agent-collisions-launcharg.patch|agent_collisions as a launch"
     "$GYM_ROS|f1tenth_gym_ros__obstacle-size-param.patch|obstacle_size be set from"
+    "$GYM_ROS|f1tenth_gym_ros__rviz-autofit.patch|fit RViz's view to the map"
 )
 
 for entry in "${PATCHES[@]}"; do

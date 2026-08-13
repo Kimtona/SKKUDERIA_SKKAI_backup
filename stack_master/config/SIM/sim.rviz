@@ -529,19 +529,35 @@ Visualization Manager:
     Current:
       Class: rviz_default_plugins/TF
   Value: true
+  # Focal Point, Distance and Yaw are REPLACED at launch time by
+  # stack_master.rviz_autofit so the view is centred on whatever map is being
+  # launched; the values here are only the fallback, and they fit
+  # hangar_1905_v0. Nothing else in this block is touched by that code.
+  #
+  # The Yaw below is the saved one plus a quarter turn. Screens are wider than
+  # they are tall, so a map that is taller than it is wide -- hangar is
+  # 7.10 x 23.80 m -- is laid along the screen instead of up it. rviz_autofit
+  # decides that per map by comparing the two fits and keeping the closer one,
+  # so the GLC maps, already landscape, keep the saved orientation.
+  #
+  # Kept as an Orbit on purpose: the global waypoint markers carry the velocity
+  # profile in their height (global_planner_utils sets position.z and scale.z
+  # from vx_mps / max_vx_mps), so the view has to be tiltable to read it. An
+  # orthographic top-down controller would frame the track more tightly but
+  # would flatten that away.
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 12.151151657104492
+      Distance: 19.53
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 1.2561830282211304
-        Y: 2.806946039199829
-        Z: 1.4169552326202393
+        X: 0.427
+        Y: 10.35
+        Z: 0
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
@@ -550,7 +566,7 @@ Visualization Manager:
       Pitch: 1.5397963523864746
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 4.733580589294434
+      Yaw: 6.304376916089330
     Saved: ~
 Window Geometry:
   Displays:

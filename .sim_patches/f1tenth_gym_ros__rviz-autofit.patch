@@ -1,0 +1,67 @@
+From d9be78c4f35ad68b39650876cd3f8bdce3b65653 Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Thu, 13 Aug 2026 18:44:59 +0900
+Subject: [PATCH] Let the launch fit RViz's view to the map it is starting
+
+RViz has no zoom-to-fit and no way to move the camera once it is running, so
+the view has to be baked into the config file it starts with. This resolves
+map_yaml_path inside an OpaqueFunction and asks stack_master.rviz_autofit for a
+config framed on that map, instead of always handing over a static sim.rviz
+whose saved camera happened to suit whichever map was open when it was saved.
+
+rviz_autofit returns the untouched template if the map cannot be read, so this
+can change how the view looks but never whether rviz starts.
+---
+ launch/gym_bridge_launch.py | 29 +++++++++++++++++++++--------
+ 1 file changed, 21 insertions(+), 8 deletions(-)
+
+diff --git a/launch/gym_bridge_launch.py b/launch/gym_bridge_launch.py
+index 60f553c..cf24229 100644
+--- a/launch/gym_bridge_launch.py
++++ b/launch/gym_bridge_launch.py
+@@ -24,7 +24,7 @@ from launch import LaunchDescription
+ from launch_ros.actions import Node
+ from launch_ros.parameter_descriptions import ParameterValue
+ from launch.substitutions import Command, LaunchConfiguration
+-from launch.actions import DeclareLaunchArgument
++from launch.actions import DeclareLaunchArgument, OpaqueFunction
+ from ament_index_python.packages import get_package_share_directory
+ import os
+ import yaml
+@@ -63,13 +63,26 @@ def generate_launch_description():
+                     # string, and the node declares this as a bool.
+                     {'agent_collisions': ParameterValue(agent_collisions, value_type=bool)}]
+     )
+-    rviz_node = Node(
+-        package='rviz2',
+-        executable='rviz2',
+-        name='rviz',
+-        arguments=[
+-            '-d', os.path.join(get_package_share_directory('stack_master'), 'config', 'SIM', 'sim.rviz')]
+-    )
++    # RViz has no zoom-to-fit and no way to move the camera once it is running,
++    # so the view has to be baked into the config it starts with. Resolve
++    # map_yaml_path (a substitution, only known at launch time) inside an
++    # OpaqueFunction, derive the view from that map, and hand rviz the derived
++    # config. stack_master.rviz_autofit returns the untouched template if the
++    # map cannot be read, so rviz always starts.
++    def rviz_with_fitted_view(context):
++        from stack_master.rviz_autofit import fitted_rviz_config
++
++        template = os.path.join(
++            get_package_share_directory('stack_master'), 'config', 'SIM', 'sim.rviz')
++        config = fitted_rviz_config(template, map_yaml_path.perform(context))
++        return [Node(
++            package='rviz2',
++            executable='rviz2',
++            name='rviz',
++            arguments=['-d', config]
++        )]
++
++    rviz_node = OpaqueFunction(function=rviz_with_fitted_view)
+     map_server_node = Node(
+         package='nav2_map_server',
+         executable='map_server',
+-- 
+2.50.1 (Apple Git-155)
+

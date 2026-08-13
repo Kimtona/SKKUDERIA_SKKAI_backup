@@ -45,6 +45,7 @@ setup(
     entry_points={
         'console_scripts': [
             'global_parameter_node = stack_master.global_parameter_node:main',
+            'rviz_autofit = stack_master.rviz_autofit:main',
         ],
     },
 )
