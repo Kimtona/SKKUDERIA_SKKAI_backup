@@ -1,0 +1,31 @@
+sector_tuner:
+  ros__parameters:
+    global_limit: 0.5
+    n_sectors: 4
+    # Boundaries follow the four features of the lap (482 IQP waypoints, 48.0 m,
+    # 0.1 m spacing): main straight, right hairpin around the small island,
+    # middle corridor + diagonal + top straight, left S-bend back to the line.
+    Sector0:            # s 0.0-15.9 m  main straight + right-hand sweep
+      start: 0
+      end: 159
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false
+    Sector1:            # s 16.0-24.7 m  right hairpin around the small island
+      start: 160
+      end: 247
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false
+    Sector2:            # s 24.8-36.5 m  middle corridor + diagonal + top straight
+      start: 248
+      end: 365
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false
+    Sector3:            # s 36.6-48.0 m  left S-bend and run to start/finish
+      start: 366
+      end: 481
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false

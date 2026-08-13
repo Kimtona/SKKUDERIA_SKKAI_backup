@@ -1,0 +1,27 @@
+ot_interpolator:
+  ros__parameters:
+    n_sectors: 4
+    yeet_factor: 1.25
+    spline_len: 30
+    ot_sector_begin: 0.5
+    # ot_flag is false everywhere, as every map ships, so the real car cannot
+    # overtake by accident. base_system_launch.xml passes force_all_ot_true in
+    # simulation, which turns all four on without touching this file.
+    # Only Sector0 and Sector2 are wide enough (2.0-2.2 m) to be worth enabling
+    # by hand; the two hairpins are down to 1.3-1.4 m.
+    Overtaking_sector0:   # main straight + right-hand sweep
+      start: 0
+      end: 159
+      ot_flag: false
+    Overtaking_sector1:   # right hairpin around the small island
+      start: 160
+      end: 247
+      ot_flag: false
+    Overtaking_sector2:   # middle corridor + diagonal + top straight
+      start: 248
+      end: 365
+      ot_flag: false
+    Overtaking_sector3:   # left S-bend and run to start/finish
+      start: 366
+      end: 481
+      ot_flag: false
