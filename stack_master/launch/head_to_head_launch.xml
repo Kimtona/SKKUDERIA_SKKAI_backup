@@ -18,6 +18,7 @@
     <include file="$(find-pkg-share state_machine)/launch/state_machine_launch.xml">
         <arg name="mode" value="head_to_head"/>
         <arg name="overtake_mode" value="$(var overtake_mode)"/>
+        <arg name="sim" value="$(var sim)" />
     </include>
 
     <!-- SPLINE PLANNER-->

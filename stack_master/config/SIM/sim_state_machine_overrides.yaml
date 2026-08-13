@@ -1,0 +1,46 @@
+# Simulation-only state machine overrides.
+#
+# Loaded ONLY when a launch is started with sim:=True, layered on top of
+# state_machine_params.yaml, so the real car keeps its own tuning untouched.
+# Same pattern as sim_planner_overrides.yaml.
+
+state_machine:
+  ros__parameters:
+    # FTG emergency evasion is DISABLED in simulation, deliberately.
+    #
+    # It works end to end -- forcing FTGONLY does hand control to the FTG
+    # controller and /drive carries FTG's own speed tiers -- but FTG drives the
+    # car into a wall in this simulator, so leaving it armed corrupts any
+    # overtake measurement: a run that ends in a wall gives no way to tell
+    # whether the spliner failed or FTG did.
+    #
+    # Measured on hangar_1905_v0 (2026-08-13), state forced to FTGONLY:
+    #
+    #   ftg_range_offset / ftg_safety_radius   how far it got before hitting a wall
+    #   375 / 100  (the real car's values)     wall at s = 33.2 m, d = 1.29 m
+    #   270 /  72  (beam-count equivalents)    wall at s = 37.2 m, d = -0.89 m
+    #
+    # (54.55 m lap, so neither completes one.) The root cause of the difference
+    # is that ftg_range_offset and ftg_safety_radius are in LiDAR beam-index
+    # units, and the values in controller_manager.init_ftg_controller were sized
+    # for the GL-5's 1501 beams. Gym publishes 1080, so the same numbers subtend
+    # different angles:
+    #
+    #                      GL-5 (1501 beams)        gym (1080 beams)
+    #   range_offset 375   trims 67.5 deg/side      trims 93.8 deg/side
+    #                      -> 135.1 deg considered  -> 82.5 deg considered
+    #   safety_radius 100  18.0 deg, 13.3% of the   25.0 deg, 30.3% of the
+    #                      considered array         considered array
+    #
+    # Rescaling by 1080/1501 (-> 270 / 72) restores the angles and does help,
+    # but it is not sufficient: FTG still leaves the track. FTG needs its own
+    # tuning-and-verification pass in simulation before it can be armed here.
+    #
+    # NOT a statement about the real car. `ftg_active: True` in
+    # state_machine_params.yaml stands -- FTG has been seen working on the car.
+    #
+    # The centring math is fine, for the record: controller/ftg.py derives
+    # center_correction = n_beams / 6, and (n/2 - n/6) * (1.5*pi/n) = pi/2
+    # exactly, for any beam count and independently of range_offset. Straight
+    # ahead maps to zero steering in sim just as it does on the car.
+    ftg_active: False

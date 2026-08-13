@@ -1,11 +1,28 @@
 <launch>
     <arg name="mode" default="timetrials" description="choose between: dummy / timetrials / (headtohead). Methods in brackets are not implemented" /> <!--  TODO implement head to head-->
     <arg name="log-level" default="debug"/>
+    <arg name="sim" default="False" description="True/False if running in simulation" />
+
+    <!-- Two declarations rather than one node with a conditional <param>: the
+         XML launch <param> tag does not accept an `if` attribute, so the
+         condition has to sit on an enclosing <group>. The real-car branch
+         (sim:=False, the default) is byte-for-byte the original node. -->
 
     <!-- launch state machine -->
-    <node pkg="state_machine" name="state_machine" exec="state_machine" output="screen">
-        <param from="$(find-pkg-share stack_master)/config/state_machine_params.yaml"/>
-        <param name="mode" value="$(var mode)"/>
-    </node>
+    <group if="$(var sim)">
+        <node pkg="state_machine" name="state_machine" exec="state_machine" output="screen">
+            <param from="$(find-pkg-share stack_master)/config/state_machine_params.yaml"/>
+            <!-- Simulation-only overrides, layered over the shared params above. -->
+            <param from="$(find-pkg-share stack_master)/config/SIM/sim_state_machine_overrides.yaml"/>
+            <param name="mode" value="$(var mode)"/>
+        </node>
+    </group>
+
+    <group unless="$(var sim)">
+        <node pkg="state_machine" name="state_machine" exec="state_machine" output="screen">
+            <param from="$(find-pkg-share stack_master)/config/state_machine_params.yaml"/>
+            <param name="mode" value="$(var mode)"/>
+        </node>
+    </group>
 
 </launch>
