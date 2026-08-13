@@ -34,6 +34,7 @@ DetectNode::DetectNode()
   config_.min_points = static_cast<std::size_t>(declareNumber("min_obs_size", 10.0));
   config_.min_obstacle_size_m = declareNumber("min_obs_size_m", 0.2);
   config_.max_obstacle_size_m = declareNumber("max_obs_size", 1.0);
+  config_.square_obstacle_fit = declare_parameter<bool>("square_obstacle_fit", true);
   config_.new_cluster_threshold_m = declareNumber("new_cluster_threshold_m", 0.4);
   max_viewing_distance_m_ = declareNumber("max_viewing_distance", 9.0);
   boundaries_inflation_m_ = declareNumber("boundaries_inflation", 0.1);
@@ -246,6 +247,8 @@ rcl_interfaces::msg::SetParametersResult DetectNode::parametersCallback(
         config_.min_obstacle_size_m = numeric(parameter);
       } else if (name == "max_obs_size") {
         config_.max_obstacle_size_m = numeric(parameter);
+      } else if (name == "square_obstacle_fit") {
+        config_.square_obstacle_fit = parameter.as_bool();
       } else if (name == "new_cluster_threshold_m") {
         config_.new_cluster_threshold_m = numeric(parameter);
       } else if (name == "max_viewing_distance") {

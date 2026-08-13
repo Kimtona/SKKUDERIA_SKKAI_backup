@@ -192,15 +192,20 @@ std::vector<DetectedObstacle> fitLShapes(
       }
     }
 
+    const double extent_first = extents.max_first - extents.min_first;
+    const double extent_second = extents.max_second - extents.min_second;
     const double size = std::max(
-      std::max(
-        extents.max_first - extents.min_first,
-        extents.max_second - extents.min_second),
-      config.min_obstacle_size_m);
+      std::max(extent_first, extent_second), config.min_obstacle_size_m);
+    // Step inward from the corner nearest the sensor. Per axis when the square
+    // assumption is off, which lands on the centre of the observed extents.
+    const double step_first = config.square_obstacle_fit ? size / 2.0
+      : std::max(extent_first, config.min_obstacle_size_m) / 2.0;
+    const double step_second = config.square_obstacle_fit ? size / 2.0
+      : std::max(extent_second, config.min_obstacle_size_m) / 2.0;
     double center_first = corners[closest_corner].x;
     double center_second = corners[closest_corner].y;
-    center_first += (closest_corner < 2U ? -1.0 : 1.0) * size / 2.0;
-    center_second += (closest_corner % 2U == 0U ? -1.0 : 1.0) * size / 2.0;
+    center_first += (closest_corner < 2U ? -1.0 : 1.0) * step_first;
+    center_second += (closest_corner % 2U == 0U ? -1.0 : 1.0) * step_second;
 
     obstacles.push_back(
       {

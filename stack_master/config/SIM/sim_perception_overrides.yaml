@@ -40,3 +40,28 @@ detect:
     # probably too small there too, but that is a call to make against real
     # LiDAR data, not against gym's.
     max_obs_size: 0.7
+
+    # Put the fitted obstacle's centre at the centre of what was observed,
+    # instead of assuming it is square.
+    #
+    # fitLShapes finds the centre by stepping inward from the corner nearest the
+    # sensor, and legacy behaviour steps by half of `size` -- the LARGER of the
+    # two observed extents -- along BOTH axes. For a car seen side-on (roughly
+    # 0.58 m by 0.20 m) that pushes the centre about 0.19 m too far from the
+    # sensor across the narrow axis.
+    #
+    # The near edge survives this, because tracking re-derives
+    # d_left/d_right = d_center +/- size/2 and the two errors largely cancel:
+    # measured near-edge error is -0.060 m (ego on the left) and -0.129 m (ego on
+    # the right). The CENTRE does not: -0.073 m mean, 0.187 m in magnitude,
+    # against a fitted size averaging 0.342 m for a car 0.203 m wide.
+    #
+    # That is the one the safety gate uses. state_machine._check_ofree compares
+    # |ot_d - obs.d_center| against lateral_width_ot_m (0.3 m), so a centre
+    # displaced away from the ego makes an overtake read as clear when it is not
+    # -- which is how the remaining collisions get approved.
+    #
+    # SIM-scoped: the detector is shared with the real car, whose obstacle tuning
+    # (max_obs_size 0.5, lateral_width_ot_m 0.3) was set against the current
+    # behaviour. Node default is true, so the real car is unaffected.
+    square_obstacle_fit: false
