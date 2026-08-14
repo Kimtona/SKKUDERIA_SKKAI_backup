@@ -534,11 +534,16 @@ Visualization Manager:
   # launched; the values here are only the fallback, and they fit
   # hangar_1905_v0. Nothing else in this block is touched by that code.
   #
-  # The Yaw below is the saved one plus a quarter turn. Screens are wider than
-  # they are tall, so a map that is taller than it is wide -- hangar is
-  # 7.10 x 23.80 m -- is laid along the screen instead of up it. rviz_autofit
-  # decides that per map by comparing the two fits and keeping the closer one,
-  # so the GLC maps, already landscape, keep the saved orientation.
+  # The Yaw below draws map x along screen x. Screens are wider than they are
+  # tall, so a map that is taller than it is wide -- hangar is 7.10 x 23.80 m --
+  # is laid along the screen instead of up it, and rviz_autofit adds a quarter
+  # turn to this value for that case. It decides per map by comparing the two
+  # fits and keeping the closer one, so the GLC maps and the skku_track_22x8
+  # family, already landscape, keep the Yaw saved here.
+  #
+  # It has to be the untuned value: this used to hold hangar's turned Yaw, which
+  # rviz_autofit then turned again, and every landscape map launched showing a
+  # 14 m slice of itself up the screen.
   #
   # Kept as an Orbit on purpose: the global waypoint markers carry the velocity
   # profile in their height (global_planner_utils sets position.z and scale.z
@@ -566,7 +571,7 @@ Visualization Manager:
       Pitch: 1.5397963523864746
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 6.304376916089330
+      Yaw: 4.733580589294433
     Saved: ~
 Window Geometry:
   Displays:
