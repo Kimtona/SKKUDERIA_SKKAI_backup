@@ -29,6 +29,15 @@ is re-rendered from those:
 Pockets vanish in step 6 and the hairline between two passes becomes a wall as
 thick as 2*TRIM. Widths are clamped so the track never drops below MIN_WIDTH.
 
+Because the width only enters at step 6, `--width` can replace the profile from
+step 5 with one full width per sector and leave the centre line -- the shape of
+the track -- exactly where it was. That is how skku_track_22x8_wide / _mid /
+_narrow are built; `build_track_variant.sh` runs this and everything downstream
+of it. Two things bound how wide a sector can go, and both are checked here: the
+ribbon has to stay inside the canvas, and the wall between two passes has to
+survive. On this sketch that leaves roughly +0.2 m over the _mid set before the
+track runs out of the 8 m room, and the wall down to 0.30 m.
+
 Writes <name>.png and <name>.yaml into stack_master/maps/<name>/. The YAML
 carries `initial_pose`, which global_planner requires and which no map produced
 by mapping_node's current writer path is guaranteed to have. Then:
@@ -47,6 +56,7 @@ map, renumber the sectors to the new waypoint count, and re-derive the sim spawn
 poses in config/SIM/sim.yaml from the new global_waypoints.json.
 """
 import argparse
+import json
 import os
 
 import cv2
@@ -146,13 +156,56 @@ def to_metres(rc, mask, box, box_size):
     return c, lowpass(dt[row, col] * 0.5 * (sx + sy), SMOOTH_W)
 
 
+def drive_frac(n, start, reverse):
+    """Lap fraction of each centre-line index, measured in driving order."""
+    i = np.arange(n)
+    return ((start - i) % n) / n if reverse else ((i - start) % n) / n
+
+
+def sector_halfwidth(n, lap, start, reverse, bounds, widths, taper):
+    """Piecewise-constant per-sector width, blended over `taper` metres."""
+    fr = drive_frac(n, start, reverse)
+    hw = np.empty(n)
+    for k, a in enumerate(bounds):
+        b = bounds[(k + 1) % len(bounds)]
+        sel = (fr >= a) & (fr < b) if a < b else (fr >= a) | (fr < b)
+        hw[sel] = widths[k] / 2
+    # A step in the width profile puts a step in the wall. Blend it out with a
+    # Hann window as long as `taper`, wrapped so the start/finish joint is
+    # smooth too. Sectors here are 9-15 m, so a 2 m blend leaves the interiors
+    # at their nominal width.
+    m = max(3, int(round(taper / (lap / n))) | 1)
+    win = np.hanning(m + 2)[1:-1]
+    return np.convolve(np.r_[hw[-m:], hw, hw[:m]], win / win.sum(), 'same')[m:-m]
+
+
+def wall_report(free, resolution=RESOLUTION):
+    """Per-wall-component area and thinnest neck, outer wall excluded."""
+    walls, n = ndimage.label(~free)
+    border = set(np.r_[walls[0], walls[-1], walls[:, 0], walls[:, -1]]) - {0}
+    out = []
+    for lab in range(1, n + 1):
+        if lab in border:                         # the outside, unbounded
+            continue
+        blob = walls == lab
+        dt = ndimage.distance_transform_edt(np.pad(blob, 1))[1:-1, 1:-1]
+        # thinnest cross-section = smallest 2*dt along the medial axis; the
+        # skeleton's own tips read low, so ignore the outer 10% of it.
+        sk = skeletonize(blob)
+        neck = np.sort(2 * dt[sk] * resolution)
+        out.append((blob.sum() * resolution ** 2,
+                    float(neck[max(0, int(0.1 * len(neck)))]) if len(neck) else 0.0))
+    return out
+
+
 def render(c, hw, canvas):
     """Rasterise the ribbon, centred in a canvas of (width, height) metres."""
-    c, hw = c * SCALE, np.maximum(hw * SCALE - TRIM, MIN_WIDTH / 2)
     lo = np.array([(c[:, 0] - hw).min(), (c[:, 1] - hw).min()])
     hi = np.array([(c[:, 0] + hw).max(), (c[:, 1] + hw).max()])
     if np.any(hi - lo > np.array(canvas)):
-        raise SystemExit(f'track is {hi - lo} m, does not fit a {canvas} m canvas')
+        over = np.maximum(hi - lo - np.array(canvas), 0)
+        raise SystemExit(f'track is {(hi - lo).round(2)} m, over a {canvas} m canvas '
+                         f'by {over.round(2)} m -- narrow a sector or grow --canvas')
     c = c + (np.array(canvas) - (hi + lo)) / 2
 
     closed = np.vstack([c, c[:1]])
@@ -187,10 +240,43 @@ def main():
     p.add_argument('--heading', type=float, default=None,
                    help='initial_pose yaw in rad. Defaults to the traced tangent; pass the '
                         'opposite to make global_planner run the lap the other way round.')
+    p.add_argument('--width', type=float, nargs='+', metavar='W',
+                   help='one full track width in metres per sector, in driving order from '
+                        '--start. Replaces the width profile read off the sketch; the centre '
+                        'line, and so the shape of the track, is untouched.')
+    p.add_argument('--sector-bounds', type=float, nargs='+', metavar='F',
+                   default=[0.0639, 0.3768, 0.5672, 0.8029],
+                   help='lap fraction where each --width sector begins, driving order from '
+                        '--start. The default four are skku_track_22x8: main straight, right '
+                        'hairpin, middle corridor, left S-bend.')
+    p.add_argument('--taper', type=float, default=2.0,
+                   help='metres over which one sector width blends into the next')
+    p.add_argument('--min-width', type=float, default=MIN_WIDTH,
+                   help='hard floor on the rendered track width in metres')
+    p.add_argument('--expect-walls', type=int, default=None,
+                   help='fail unless the map ends up with this many inner islands; a widened '
+                        'sector that swallows the wall between two passes drops the count')
+    p.add_argument('--min-wall', type=float, default=0.10,
+                   help='fail if any inner island is thinner than this, in metres')
     args = p.parse_args()
+    if args.width and len(args.width) != len(args.sector_bounds):
+        raise SystemExit(f'{len(args.width)} widths for {len(args.sector_bounds)} sectors')
 
     mask = drivable_mask(args.sketch, args.seed)
     c, hw = to_metres(centreline_cycle(mask), mask, args.box, args.box_size)
+
+    c = c * SCALE
+    hw = np.maximum(hw * SCALE - TRIM, args.min_width / 2)
+    tangent = c[(args.start + 5) % len(c)] - c[args.start]
+    traced = float(np.arctan2(tangent[1], tangent[0]))
+    # Driving order is the traced order unless --heading opposes it, and every
+    # sector fraction below is measured in driving order.
+    reverse = args.heading is not None and np.cos(args.heading - traced) < 0
+    if args.width:
+        lap = float(np.hypot(*np.diff(np.vstack([c, c[:1]]), axis=0).T).sum())
+        hw = np.maximum(sector_halfwidth(len(c), lap, args.start, reverse,
+                                         args.sector_bounds, args.width, args.taper),
+                        args.min_width / 2)
     free, c, hw, lap = render(c, hw, args.canvas)
 
     holes, n_holes = ndimage.label(~free)
@@ -203,15 +289,35 @@ def main():
     print(f'free regions   {n_free} (must be 1)')
     print(f'wall regions   {n_holes} (outside + inner islands)')
 
+    islands = wall_report(free)
+    for i, (area, neck) in enumerate(islands):
+        print(f'  island {i}     {area:.2f} m2, thinnest {neck:.2f} m')
+    if args.expect_walls is not None and len(islands) != args.expect_walls:
+        raise SystemExit(f'{len(islands)} inner islands, expected {args.expect_walls} -- a '
+                         'sector is wide enough to swallow the wall between two passes')
+    thin = [n for _, n in islands if n < args.min_wall]
+    if thin:
+        raise SystemExit(f'wall down to {min(thin):.2f} m, under --min-wall {args.min_wall}')
+
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'maps', args.name)
     os.makedirs(out, exist_ok=True)
     cv2.imwrite(os.path.join(out, args.name + '.png'),
                 np.flipud(np.where(free, 255, 0).astype(np.uint8)))
 
     sx, sy = c[args.start]
+    # Where each sector begins, in map frame. The raceline does not exist yet and
+    # its waypoint 0 lands wherever global_planner puts it, so sector indices are
+    # recovered later by projecting these points onto it -- see map_sectors.py.
+    fr = drive_frac(len(c), args.start, reverse)
+    starts = [c[int(np.argmin(np.abs(fr - f)))] - [sx, sy] for f in args.sector_bounds]
+    with open(os.path.join(out, 'sector_bounds.json'), 'w') as f:
+        json.dump({'bounds_frac': list(args.sector_bounds),
+                   'bounds_xy': [[round(float(x), 4), round(float(y), 4)] for x, y in starts],
+                   'widths': list(args.width) if args.width else None,
+                   'lap_m': round(float(lap), 3)}, f, indent=1)
+
     if args.heading is None:
-        nxt = c[(args.start + 5) % len(c)] - c[args.start]
-        args.heading = round(float(np.arctan2(nxt[1], nxt[0])), 4)
+        args.heading = round(traced, 4)
     with open(os.path.join(out, args.name + '.yaml'), 'w') as f:
         yaml.dump({'image': args.name + '.png',
                    'resolution': RESOLUTION,

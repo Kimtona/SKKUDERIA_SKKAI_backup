@@ -1,0 +1,24 @@
+# Written by map_sectors.py from skku_track_22x8_wide's IQP raceline (461 waypoints, 45.9 m).
+# Sector widths [2.2, 1.65, 1.6, 1.75] m.
+ot_interpolator:
+  ros__parameters:
+    yeet_factor: 1.25
+    spline_len: 30
+    ot_sector_begin: 0.5
+    n_sectors: 4
+    Overtaking_sector0:  # s 0.0-16.6 m
+      start: 0
+      end: 166
+      ot_flag: false
+    Overtaking_sector1:  # s 16.7-24.7 m
+      start: 167
+      end: 247
+      ot_flag: false
+    Overtaking_sector2:  # s 24.8-36.6 m
+      start: 248
+      end: 367
+      ot_flag: false
+    Overtaking_sector3:  # s 36.7-45.9 m
+      start: 368
+      end: 460
+      ot_flag: false

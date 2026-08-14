@@ -1,0 +1,30 @@
+# Written by map_sectors.py from skku_track_22x8_wide's IQP raceline (461 waypoints, 45.9 m).
+# Sector widths [2.2, 1.65, 1.6, 1.75] m.
+sector_tuner:
+  ros__parameters:
+    global_limit: 0.5
+    n_sectors: 4
+    Sector0:  # s 0.0-16.6 m
+      start: 0
+      end: 166
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false
+    Sector1:  # s 16.7-24.7 m
+      start: 167
+      end: 247
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false
+    Sector2:  # s 24.8-36.6 m
+      start: 248
+      end: 367
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false
+    Sector3:  # s 36.7-45.9 m
+      start: 368
+      end: 460
+      scaling: 0.5
+      only_FTG: false
+      no_FTG: false

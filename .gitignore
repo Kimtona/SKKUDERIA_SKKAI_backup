@@ -52,6 +52,19 @@ stack_master/maps/GLC_smile_small/ot_sectors.yaml
 # for scaled global waypoints). The same two files are already tracked for
 # GLC_smile_small and glc_ot_ez.
 
+# The skku_track_22x8 family is synthetic -- scripts/sketch_to_map.py draws it
+# from a committed sketch, so unlike the recorded maps above there is no machine
+# it lives on. Tracked so it survives a fresh clone. The three suffixed maps are
+# the same centre line at different per-sector widths; see
+# skku_track_22x8/width_variants.png.
+!stack_master/maps/skku_track_22x8
+!stack_master/maps/skku_track_22x8_wide
+!stack_master/maps/skku_track_22x8_mid
+!stack_master/maps/skku_track_22x8_narrow
+# Screenshots and previews are working files, not part of any map.
+stack_master/maps/*/rviz_timetrials.png
+stack_master/maps/*/preview_*.png
+
 #todo: what's up with maps -> external map folder?
 .vscode/build
 .vscode/log
