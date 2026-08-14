@@ -83,20 +83,23 @@ bridge:
     #
     # Values below are read off the map's own IQP raceline
     # (stack_master/maps/<map_name>/global_waypoints.json); psi_rad in that file
-    # is already the map-frame yaw, so stheta is a straight copy. Sitting on the
-    # raceline is deliberate: off it, the opponent falls outside spline_planner's
-    # obs_traj_tresh and never triggers an evasion at all.
+    # is already the map-frame yaw, so stheta is a straight copy. Every map has
+    # its own raceline, so switching maps means switching this block, and the
+    # value below is only whichever map was launched last:
+    #     scripts/sim_map.sh <map_name>                 rewrites it and launches
+    #     scripts/map_sectors.py <map_name> --spawn-only --set-spawn   rewrites
+    #                                                   it and stops there
     #
-    # ACTIVE MAP: skku_track_22x8
-    # ego at raceline s = 0.0 m, opponent at s = 8.0 m -- both on the 2.0 m wide
-    # main straight, 8 m of approach room, and neither sitting in the right-hand
-    # sweep that follows it.
-    sx: 3.3020
-    sy: -0.4890
-    stheta: -0.0040
-    sx1: 11.2860
-    sy1: -0.5340
-    stheta1: 0.0080
+    # Sitting on the raceline is deliberate: off it, the opponent falls outside
+    # spline_planner's obs_traj_tresh and never triggers an evasion at all.
+    #
+    # ACTIVE MAP: skku_track_22x8 -- ego s = 0.0 m, opponent s = 8.0 m
+    sx: 3.3022
+    sy: -0.4889
+    stheta: -0.0039
+    sx1: 11.2862
+    sy1: -0.5337
+    stheta1: 0.0083
 
     # hangar_1905_v0 -- ego s = 0.0 m, opponent s = 12.0 m on the long straight
     # (d_left 1.70 m / d_right 0.40 m). Swap back in when launching that map.
