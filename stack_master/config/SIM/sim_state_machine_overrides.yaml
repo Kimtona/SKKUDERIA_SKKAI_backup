@@ -6,25 +6,33 @@
 
 state_machine:
   ros__parameters:
-    # FTG emergency evasion is DISABLED in simulation, deliberately.
+    # FTG emergency evasion is ARMED in simulation, matching the real car.
     #
-    # It works end to end -- forcing FTGONLY does hand control to the FTG
-    # controller and /drive carries FTG's own speed tiers -- but FTG drives the
-    # car into a wall in this simulator, so leaving it armed corrupts any
-    # overtake measurement: a run that ends in a wall gives no way to tell
-    # whether the spliner failed or FTG did.
+    # It was disabled here between 2026-08-13 and 2026-08-14, on the grounds
+    # that FTG drives into a wall in this simulator and a run ending in a wall
+    # would give no way to tell whether the spliner failed or FTG did. That
+    # second half does not hold: `_check_ftg` only fires from TRAILING after
+    # ftg_timer_sec * rate_hz = 3.0 * 40 = 120 consecutive cycles under
+    # ftg_threshold_speed 0.1 m/s, so FTG cannot take over until the spliner has
+    # already failed hard enough to leave the car standing still for three
+    # seconds. Everything before that instant is the spliner, and the state
+    # machine warns `FTG counter: n/120` on every cycle of the wait, so the
+    # handover is in the log as well as on screen.
     #
-    # Measured on hangar_1905_v0 (2026-08-13), state forced to FTGONLY:
+    # What to expect when it does fire, measured on hangar_1905_v0 (2026-08-13)
+    # with the state forced to FTGONLY:
     #
     #   ftg_range_offset / ftg_safety_radius   how far it got before hitting a wall
     #   375 / 100  (the real car's values)     wall at s = 33.2 m, d = 1.29 m
     #   270 /  72  (beam-count equivalents)    wall at s = 37.2 m, d = -0.89 m
     #
-    # (54.55 m lap, so neither completes one.) The root cause of the difference
-    # is that ftg_range_offset and ftg_safety_radius are in LiDAR beam-index
-    # units, and the values in controller_manager.init_ftg_controller were sized
-    # for the GL-5's 1501 beams. Gym publishes 1080, so the same numbers subtend
-    # different angles:
+    # (54.55 m lap, so neither completes one.) FTG in sim is a rescue that
+    # crashes; it is armed to be observed, not because it works yet.
+    #
+    # The cause of that is still open: ftg_range_offset and ftg_safety_radius are
+    # in LiDAR beam-index units, and the values in
+    # controller_manager.init_ftg_controller were sized for the GL-5's 1501
+    # beams. Gym publishes 1080, so the same numbers subtend different angles:
     #
     #                      GL-5 (1501 beams)        gym (1080 beams)
     #   range_offset 375   trims 67.5 deg/side      trims 93.8 deg/side
@@ -32,15 +40,19 @@ state_machine:
     #   safety_radius 100  18.0 deg, 13.3% of the   25.0 deg, 30.3% of the
     #                      considered array         considered array
     #
-    # Rescaling by 1080/1501 (-> 270 / 72) restores the angles and does help,
-    # but it is not sufficient: FTG still leaves the track. FTG needs its own
-    # tuning-and-verification pass in simulation before it can be armed here.
-    #
-    # NOT a statement about the real car. `ftg_active: True` in
-    # state_machine_params.yaml stands -- FTG has been seen working on the car.
+    # Rescaling by 1080/1501 (-> 270 / 72) restores the angles and helps, but is
+    # not sufficient. Those two live on the CONTROLLER node, not this one, and
+    # controller_launch.xml reads no param file at all, so overriding them for
+    # sim needs a sim/non-sim split there first.
     #
     # The centring math is fine, for the record: controller/ftg.py derives
     # center_correction = n_beams / 6, and (n/2 - n/6) * (1.5*pi/n) = pi/2
     # exactly, for any beam count and independently of range_offset. Straight
     # ahead maps to zero steering in sim just as it does on the car.
-    ftg_active: False
+    #
+    # One thing to watch when reading a run: f110_gym latches collisions, so a
+    # car that has crashed reports exactly 0 m/s forever. If it was TRAILING at
+    # the time, the counter runs to 120 and the state goes FTGONLY three seconds
+    # after a collision that had already ended the run. Frozen odom with a
+    # healthy /drive is the latch, not FTG -- see the note in config/SIM/sim.yaml.
+    ftg_active: True
