@@ -118,7 +118,16 @@ class Opponent_state:
                          Opponent_state.track_length),x[1], x[2], x[3]])
 
     def target_velocity(self) :
-        idx_closest_waypoint =  int((self.dynamic_kf.x[0]*10)%Opponent_state.track_length)
+        # The index is a fraction of the waypoint list, not s*10 wrapped by the track
+        # length -- that mixed an index with a distance. Waypoints sit 0.1 m apart, so
+        # the list is 10x longer than track_length and the modulo wrapped 10x too
+        # early: at s=30 m on a 46 m track it read waypoint 24 (s=2.4 m) rather than
+        # waypoint 300. Deriving the index from the list length also drops the
+        # hardcoded 0.1 m spacing assumption. x[0] is normalize_s'd, so it can be
+        # negative; floor + modulo wraps that back into range.
+        n = len(Opponent_state.waypoints)
+        idx_closest_waypoint = int(
+            math.floor(self.dynamic_kf.x[0] / Opponent_state.track_length * n)) % n
         return Opponent_state.ratio_to_glob_path*Opponent_state.waypoints[idx_closest_waypoint].vx_mps
 
     # ---------------------------------------
