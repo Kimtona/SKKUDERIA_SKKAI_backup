@@ -137,8 +137,15 @@ class Opponent_state:
 
     def update(self, tracked_obstacle: ObstacleSD):
 
-        vs = ((2/3 * (tracked_obstacle.measurments_s[-1] - tracked_obstacle.measurments_s[-2])*self.rate) 
-              + (1/3 * (tracked_obstacle.measurments_s[-2] - tracked_obstacle.measurments_s[-3])*self.rate))
+        # Wrap the s-differences across the s=0/track_length seam. Unwrapped, a lap
+        # crossing gives ds ~= -track_length, so vs lands far outside the gate below
+        # and the opponent track is destroyed once every lap at the finish line.
+        ds1 = normalize_s(tracked_obstacle.measurments_s[-1] - tracked_obstacle.measurments_s[-2],
+                          Opponent_state.track_length)
+        ds2 = normalize_s(tracked_obstacle.measurments_s[-2] - tracked_obstacle.measurments_s[-3],
+                          Opponent_state.track_length)
+        vs = ((2/3 * ds1 * self.rate)
+              + (1/3 * ds2 * self.rate))
 
         if not (vs > -1 and vs < 8):
             self.isInitialised = False
@@ -764,9 +771,13 @@ class StaticDynamic(Node):
         dists = []
 
         for meas_obstacle in meas_obstacles_copy:
-            meas_obstacle_position = (meas_obstacle.s_center,
-                                      meas_obstacle.d_center)
-            dist = math.dist(obstacle_position, meas_obstacle_position)
+            # s is cyclic, d is not. Wrapping the s-difference is what lets a track
+            # at s=L-0.1 associate with a measurement at s=0.1 (0.2 m apart) instead
+            # of reading it as L-0.2 m away and dropping the track every lap.
+            ds = normalize_s(obstacle_position[0] - meas_obstacle.s_center,
+                             self.track_length)
+            dd = obstacle_position[1] - meas_obstacle.d_center
+            dist = math.hypot(ds, dd)
 
             if (dist < max_dist):
                 potential_obs.append(meas_obstacle)
@@ -869,8 +880,12 @@ class StaticDynamic(Node):
 
         self.opponent_obstacle.dynamic_kf.x = np.array([
             tracked_obstacle.measurments_s[-1],
-            (tracked_obstacle.measurments_s[-1] -
-             tracked_obstacle.measurments_s[-2])*Opponent_state.rate,
+            # same seam wrap as Opponent_state.update: an obstacle promoted to
+            # dynamic right at the finish line would otherwise start the filter
+            # off with a velocity of roughly -track_length*rate
+            normalize_s(tracked_obstacle.measurments_s[-1] -
+                        tracked_obstacle.measurments_s[-2],
+                        self.track_length)*Opponent_state.rate,
             tracked_obstacle.measurments_d[-1],
             (tracked_obstacle.measurments_d[-1] -
              tracked_obstacle.measurments_d[-2])*Opponent_state.rate
