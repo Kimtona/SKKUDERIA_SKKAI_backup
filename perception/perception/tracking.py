@@ -388,6 +388,10 @@ class StaticDynamic(Node):
         '''Current lap of the car'''
         self.current_stamp: Time = self.get_clock().now().to_msg()
         '''Timestamp of most recent obstacle'''
+        self._last_meas_stamp: Optional[Tuple[int, int]] = None
+        '''(sec, nanosec) of the last ObstacleArray that update() actually consumed'''
+        self.stale_meas_count: int = 0
+        '''How many cycles ran without a fresh detection. Logged in debug_mode.'''
         self.current_id: int = 1
         '''TODO'''
         self.update_rate: int = self.get_parameter(
@@ -643,7 +647,28 @@ class StaticDynamic(Node):
         if not self._initialized_track_bounds:
             return
 
-        meas_obstacles_copy = self.meas_obstacles.copy()
+        # Consume each ObstacleArray at most once. detect and tracking run on
+        # independent timers, so their phases drift and a cycle can find the same
+        # message still sitting there. Re-consuming it appends a zero-displacement
+        # measurement to every matched track: vs is a weighted difference of the last
+        # three samples, so one duplicate alone underestimates it by a third. The
+        # duplicates also eat slots in the 30/20-capped measurement history, leaving
+        # isStatic() to vote on a window that spans less real motion. Running the
+        # cycle with no measurements instead is also what lets tracks expire if
+        # detect stops publishing altogether; previously the frozen message kept
+        # re-associating and held every ttl at its maximum.
+        meas_stamp = (self.current_stamp.sec, self.current_stamp.nanosec)
+        if meas_stamp == self._last_meas_stamp:
+            meas_obstacles_copy = []
+            self.stale_meas_count += 1
+            if self.debug_mode:
+                self.get_logger().info(
+                    f"[Tracking] no new detection this cycle "
+                    f"(stale cycles so far: {self.stale_meas_count})")
+        else:
+            self._last_meas_stamp = meas_stamp
+            meas_obstacles_copy = self.meas_obstacles.copy()
+
         car_s_copy = self.car_s
         car_position_copy = np.copy(self.car_position)  # type: ignore
         car_orientation_copy = np.copy(self.car_orientation)  # type: ignore
