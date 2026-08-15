@@ -65,3 +65,38 @@ detect:
     # (max_obs_size 0.5, lateral_width_ot_m 0.3) was set against the current
     # behaviour. Node default is true, so the real car is unaffected.
     square_obstacle_fit: false
+
+tracking:
+  ros__parameters:
+    # How many CONSECUTIVE unmatched cycles a track survives. Despite the name it
+    # governs unclassified and dynamic ObstacleSD tracks too -- ttl_dynamic only
+    # bounds the opponent KF object, not the track that feeds it. Removal is checked
+    # before the decrement (tracking.py:746), so the shared value of 3 drops a track
+    # after 4 misses, i.e. 0.20 s at rate 20.
+    #
+    # Measured on skku_track_22x8_wide, head_to_head with a driven opponent, two
+    # sweeps of 120-130 s per value (opponent at 0.75x and 0.90x raceline speed):
+    #
+    #   ttl_static   state transitions   OT entries   track life avg   ghosts
+    #        3          49 / 87            17 / 28     2.64 / 0.49 s    0 / 5
+    #        6          51 / 71            18 / 22     2.33 / 0.52 s    0 / 4
+    #       10          29 / 66             9 / 20     2.43 / 0.74 s    0 / 10
+    #       20          33 / 49             8 / 19     2.23 / 1.28 s    0 / 0
+    #
+    # The reproducible effect is on churn: TRAILING<->OVERTAKE flapping roughly
+    # halves by 10 and flattens after that. At 3 the opponent's track is dropped and
+    # rebuilt several times a second, and each rebuild costs a new id plus
+    # min_nb_meas+1 = 6 matched cycles (0.30 s) before it is classified dynamic
+    # again.
+    #
+    # What the sweep did NOT show: any coverage gain (the share of in-range cycles
+    # with the opponent published at its true position moved 67->88% in one sweep
+    # and 69->74% in the other -- run-to-run spread was up to 14 points, so this is
+    # noise), and no ghost-persistence penalty (ghosts were rare and under 0.67 s
+    # everywhere, and zero at 20 in both sweeps). 20 is not used because lap count
+    # fell 8/8/7/6 across the second sweep, hinting at more time spent trailing;
+    # that is one run per value, so it is a reason to stop at 10, not a measurement.
+    #
+    # SIM-scoped on purpose: this was measured against gym's LiDAR, and detection
+    # continuity on the real car is a different question. The shared config keeps 3.
+    ttl_static: 10

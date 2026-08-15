@@ -35,9 +35,25 @@
         </node>
     </group>
 
-    <node pkg="perception" name="tracking" exec="tracking" output="log"
-        args="--ros-args --log-level warn">
-        <param from= "$(var param_file)" />
-        <param name="measure" value="$(var measure)" />
-    </node>
+    <!-- Same two-declaration shape as the detector above, and for the same reason:
+         <param> takes no `if`, so the sim-only override file needs an enclosing
+         <group>. The real-car branch (sim:=False, the default) is unchanged. -->
+
+    <group if="$(var sim)">
+        <node pkg="perception" name="tracking" exec="tracking" output="log"
+            args="--ros-args --log-level warn">
+            <param from= "$(var param_file)" />
+            <!-- Simulation-only overrides, layered over the shared config above. -->
+            <param from= "$(find-pkg-share stack_master)/config/SIM/sim_perception_overrides.yaml" />
+            <param name="measure" value="$(var measure)" />
+        </node>
+    </group>
+
+    <group unless="$(var sim)">
+        <node pkg="perception" name="tracking" exec="tracking" output="log"
+            args="--ros-args --log-level warn">
+            <param from= "$(var param_file)" />
+            <param name="measure" value="$(var measure)" />
+        </node>
+    </group>
 </launch>
