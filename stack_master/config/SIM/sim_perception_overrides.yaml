@@ -89,13 +89,32 @@ tracking:
     # min_nb_meas+1 = 6 matched cycles (0.30 s) before it is classified dynamic
     # again.
     #
-    # What the sweep did NOT show: any coverage gain (the share of in-range cycles
-    # with the opponent published at its true position moved 67->88% in one sweep
-    # and 69->74% in the other -- run-to-run spread was up to 14 points, so this is
-    # noise), and no ghost-persistence penalty (ghosts were rare and under 0.67 s
-    # everywhere, and zero at 20 in both sweeps). 20 is not used because lap count
-    # fell 8/8/7/6 across the second sweep, hinting at more time spent trailing;
-    # that is one run per value, so it is a reason to stop at 10, not a measurement.
+    # Re-measured after the scan model went to 1501 beams (0.00314 rad/beam, 39%
+    # finer), which changes detection continuity directly and so invalidated the
+    # numbers above. Two valid runs per value at 0.90x, ttl 3 against ttl 10:
+    #
+    #                        ttl=3            ttl=10
+    #   track life      0.52 +- 0.16 s   0.88 +- 0.14 s
+    #   coverage        68.8 +- 3.5 %    72.8 +- 2.1 %
+    #   transitions     83.0 +- 4.0      66.5 +- 0.5
+    #   OT entries      30.0 +- 3.0      22.0 +- 0.0
+    #   ghost tracks    0                0
+    #   laps            8.0 +- 0.0       6.5 +- 0.5
+    #
+    # The churn result holds, and coverage now separates too -- it was inside the
+    # noise on the coarser scan. Ghosts are gone at both settings: the finer scan,
+    # not the TTL, is what removed them, so the reason to keep this value low no
+    # longer exists.
+    #
+    # The cost is real and consistent: 6.5 laps against 8.0 in the same 130 s. It is
+    # not a defect. At 3 the opponent's track keeps dying, the state machine falls
+    # back to GB_TRACK and the ego runs the raceline at full speed past a car it has
+    # stopped seeing -- the extra laps are bought by the lower coverage. Revisit if
+    # lap time ever matters more than not losing the opponent.
+    #
+    # Two runs of that sweep were discarded: the ego latched a gym collision at
+    # s = 17.75 m and both subsequent recordings are of a stationary car (0 laps,
+    # 0 OVERTAKE entries). Check the ego's s span before trusting a run.
     #
     # SIM-scoped on purpose: this was measured against gym's LiDAR, and detection
     # continuity on the real car is a different question. The shared config keeps 3.
