@@ -1,0 +1,62 @@
+From 26a196e1a40ce7624d396438b95bc247ebb339b0 Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Sat, 15 Aug 2026 15:37:06 +0900
+Subject: [PATCH] Pass the configured scan model to the simulator
+
+scan_beams and scan_fov only ever built the LaserScan header; the env was made
+without them, so it traced f110_gym's 1080-beam, 4.7 rad default whatever the
+params file asked for. Setting them to a real sensor's values therefore produced
+1080 ranges labelled as 1501, and every consumer converting an index to an angle
+read a compressed field of view.
+
+Also derive angle_increment as fov / (n - 1) rather than fov / n. The fov spans
+the gaps between beams, of which there are n - 1, and that is both what
+ScanSimulator2D traces at and what makes angle_min + (n-1)*angle_increment come
+out at angle_max, as a real driver's scan does. At the default 1080 / 4.7 this
+moves the increment by 0.09%.
+---
+ f1tenth_gym_ros/gym_bridge.py | 15 ++++++++++++++-
+ 1 file changed, 14 insertions(+), 1 deletion(-)
+
+diff --git a/f1tenth_gym_ros/gym_bridge.py b/f1tenth_gym_ros/gym_bridge.py
+index e2c718a..4fb2320 100644
+--- a/f1tenth_gym_ros/gym_bridge.py
++++ b/f1tenth_gym_ros/gym_bridge.py
+@@ -160,12 +160,20 @@ class GymBridge(Node):
+                       for key, value in sim_param_data.items()}
+ 
+         # env backend
++        #
++        # scan_beams / scan_fov go to the simulator as well as to the LaserScan
++        # header below. Without that they only ever relabelled a scan that was
++        # still traced at f110_gym's 1080-beam, 4.7 rad default, so asking for
++        # the real sensor's 1501 beams produced 1080 ranges carrying the header
++        # of 1501 -- every index converted to the wrong angle downstream.
+         map_yaml_path = os.path.abspath(self.get_parameter('map_path').value)
+         self.env = gym.make('f110_gym:f110-v0',
+                             map=map_yaml_path.split('.')[0],
+                             map_ext=self.get_parameter('map_img_ext').value,
+                             params=sim_params,
+                             num_agents=num_agents,
++                            num_beams=self.get_parameter('scan_beams').value,
++                            fov=self.get_parameter('scan_fov').value,
+                             disable_env_checker=True)
+ 
+         sx = self.get_parameter('sx').value
+@@ -184,7 +192,12 @@ class GymBridge(Node):
+         scan_beams = self.get_parameter('scan_beams').value
+         self.angle_min = -scan_fov / 2.
+         self.angle_max = scan_fov / 2.
+-        self.angle_inc = scan_fov / scan_beams
++        # fov spans the gaps BETWEEN the beams, so there are scan_beams - 1 of
++        # them. This said scan_beams, which put the last beam's reported angle a
++        # full beam width short of angle_max and disagreed with the increment
++        # ScanSimulator2D actually traces at. A real LaserScan satisfies
++        # angle_min + (n - 1) * angle_increment == angle_max; now this one does.
++        self.angle_inc = scan_fov / (scan_beams - 1)
+         self.ego_namespace = self.get_parameter('ego_namespace').value
+         ego_odom_topic = self.ego_namespace + '/' + \
+             self.get_parameter('ego_odom_topic').value
+-- 
+2.50.1 (Apple Git-155)
+

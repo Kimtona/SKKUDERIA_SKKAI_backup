@@ -29,6 +29,9 @@ order is a requirement rather than a convention.
 | 4 | `f1tenth_gym_ros__agent-collisions.patch` | `f1tenth_gym_ros` | `agent_collisions` parameter on the bridge |
 | 5 | `f1tenth_gym_ros__agent-collisions-launcharg.patch` | `f1tenth_gym_ros` | same, as a launch argument |
 | 6 | `f1tenth_gym_ros__obstacle-size-param.patch` | `f1tenth_gym_ros` | `has_parameter` guard so `obstacle_size` can come from a params file |
+| 7 | `f1tenth_gym_ros__rviz-autofit.patch` | `f1tenth_gym_ros` | launch-time RViz config fitted to the map being launched |
+| 8 | `f1tenth_gym__scan-model.patch` | `f1tenth_gym` | `num_beams` / `fov` kwargs reach `RaceCar` instead of being ignored |
+| 9 | `f1tenth_gym_ros__scan-model.patch` | `f1tenth_gym_ros` | pass `scan_beams` / `scan_fov` to the env; `angle_increment = fov / (n - 1)` |
 
 Patch 6 exists because the bridge is constructed with
 `automatically_declare_parameters_from_overrides=True`: a parameter set in a params
@@ -44,6 +47,18 @@ Both halves are required. `gym_bridge` fixes the scan simulator's map at
 `gym.make()` time and never re-reads it, so painting `/map` alone (which is what
 `obstacle_publisher`'s `lidar` mode does) shows an obstacle in RViz that the
 ego's LiDAR cannot see.
+
+Patches 8 and 9 make `scan_beams` and `scan_fov` mean something. `RaceCar` has
+always taken `num_beams` and `fov`, but nothing passed them: `f110_env` did not
+read them from kwargs and `Simulator` did not forward them, and the bridge used
+its own two parameters only to stamp the `LaserScan` header. Setting them
+therefore relabelled a scan that was still traced at the 1080-beam, 4.7 rad
+default, and every consumer that turns an index into an angle read a field of
+view that was not there. `config/SIM/sim.yaml` asks for 1501 beams over
+4.712 rad, which is the `/scan` the real car publishes -- see the comment there.
+Patch 9 also derives `angle_increment` as `fov / (n - 1)` rather than `fov / n`,
+which is the spacing `ScanSimulator2D` traces at and the one that satisfies
+`angle_min + (n-1) * angle_increment == angle_max`, as a real driver's scan does.
 
 ## Usage
 

@@ -1,0 +1,90 @@
+From feaa85967e8ce245ae0be0d0f8a45bdee3f49c48 Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Sat, 15 Aug 2026 15:36:44 +0900
+Subject: [PATCH] Let the caller choose the scan model
+
+RaceCar has always taken num_beams and fov, but nothing reached them: f110_env
+never read them out of kwargs and Simulator never forwarded them, so every
+environment traced the 1080-beam, 4.7 rad default no matter what the caller
+configured. f1tenth_gym_ros in particular used its scan_beams / scan_fov
+parameters only to stamp the LaserScan header, which meant asking for a
+different sensor produced a scan whose header did not describe it.
+
+Defaults are unchanged, so anything not passing the new kwargs behaves exactly
+as before.
+---
+ gym/f110_gym/envs/base_classes.py |  8 +++++---
+ gym/f110_gym/envs/f110_env.py     | 15 ++++++++++++++-
+ 2 files changed, 19 insertions(+), 4 deletions(-)
+
+diff --git a/gym/f110_gym/envs/base_classes.py b/gym/f110_gym/envs/base_classes.py
+index 51b987a..4e0e393 100644
+--- a/gym/f110_gym/envs/base_classes.py
++++ b/gym/f110_gym/envs/base_classes.py
+@@ -476,7 +476,7 @@ class Simulator(object):
+ 
+     """
+ 
+-    def __init__(self, params, num_agents, seed, time_step=0.01, ego_idx=0, integrator=Integrator.RK4):
++    def __init__(self, params, num_agents, seed, time_step=0.01, ego_idx=0, integrator=Integrator.RK4, num_beams=1080, fov=4.7):
+         """
+         Init function
+ 
+@@ -486,6 +486,8 @@ class Simulator(object):
+             seed (int): seed of the rng in scan simulation
+             time_step (float, default=0.01): physics time step
+             ego_idx (int, default=0): ego vehicle's index in list of agents
++            num_beams (int, default=1080): number of beams in each agent's scan
++            fov (float, default=4.7): field of view of each agent's scan
+ 
+         Returns:
+             None
+@@ -503,10 +505,10 @@ class Simulator(object):
+         # initializing agents
+         for i in range(self.num_agents):
+             if i == ego_idx:
+-                ego_car = RaceCar(params, self.seed, is_ego=True, time_step=self.time_step, integrator=integrator)
++                ego_car = RaceCar(params, self.seed, is_ego=True, time_step=self.time_step, integrator=integrator, num_beams=num_beams, fov=fov)
+                 self.agents.append(ego_car)
+             else:
+-                agent = RaceCar(params, self.seed, is_ego=False, time_step=self.time_step, integrator=integrator)
++                agent = RaceCar(params, self.seed, is_ego=False, time_step=self.time_step, integrator=integrator, num_beams=num_beams, fov=fov)
+                 self.agents.append(agent)
+ 
+     def set_map(self, map_path, map_ext):
+diff --git a/gym/f110_gym/envs/f110_env.py b/gym/f110_gym/envs/f110_env.py
+index e81989a..884d0bf 100644
+--- a/gym/f110_gym/envs/f110_env.py
++++ b/gym/f110_gym/envs/f110_env.py
+@@ -148,6 +148,19 @@ class F110Env(gym.Env):
+         except:
+             self.integrator = Integrator.RK4
+ 
++        # scan model. RaceCar has always taken these; nothing reached them from
++        # here, so every env ran the 1080-beam / 4.7 rad default however the
++        # caller's LaserScan header was configured.
++        try:
++            self.num_beams = kwargs['num_beams']
++        except:
++            self.num_beams = 1080
++
++        try:
++            self.fov = kwargs['fov']
++        except:
++            self.fov = 4.7
++
+         # radius to consider done
+         self.start_thresh = 0.5  # 10cm
+ 
+@@ -179,7 +192,7 @@ class F110Env(gym.Env):
+         self.start_rot = np.eye(2)
+ 
+         # initiate stuff
+-        self.sim = Simulator(self.params, self.num_agents, self.seed, time_step=self.timestep, integrator=self.integrator)
++        self.sim = Simulator(self.params, self.num_agents, self.seed, time_step=self.timestep, integrator=self.integrator, num_beams=self.num_beams, fov=self.fov)
+         self.sim.set_map(self.map_path, self.map_ext)
+ 
+         # stateful observations for rendering
+-- 
+2.50.1 (Apple Git-155)
+

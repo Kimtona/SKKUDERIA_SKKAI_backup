@@ -23,6 +23,11 @@ PATCHES=(
     "$GYM_ROS|f1tenth_gym_ros__agent-collisions-launcharg.patch|agent_collisions as a launch"
     "$GYM_ROS|f1tenth_gym_ros__obstacle-size-param.patch|obstacle_size be set from"
     "$GYM_ROS|f1tenth_gym_ros__rviz-autofit.patch|fit RViz's view to the map"
+    # The two halves of the scan model. Order between submodules does not
+    # matter, only within one, so these sit at the end of the list; the gym_ros
+    # half is inert until the gym half is in.
+    "$GYM|f1tenth_gym__scan-model.patch|caller choose the scan model"
+    "$GYM_ROS|f1tenth_gym_ros__scan-model.patch|configured scan model to the"
 )
 
 for entry in "${PATCHES[@]}"; do

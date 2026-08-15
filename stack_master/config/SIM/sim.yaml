@@ -38,9 +38,36 @@ bridge:
     # transform related
     scan_distance_to_base_link: 0.27
 
-    # laserscan parameters
-    scan_fov: 4.7
-    scan_beams: 1080
+    # laserscan parameters, matched to the /scan the real car actually publishes.
+    #
+    # That scan is not the GL-5's raw output: `pc_to_scan` bins the driver's
+    # pointcloud, and config/sensors.yaml pins the result at angle_min -2.356,
+    # angle_max 2.356, angle_increment 0.00314 -- 270 deg at the GL-5's
+    # 0.18 deg/beam, which is ceil(4.712 / 0.00314) = 1501 beams.
+    #
+    # 4.712 / (1501 - 1) = 0.0031416 rad, so the published scan comes out at the
+    # real angle_min, angle_max and angle_increment to five decimals.
+    #
+    # Two patches are needed for this to be more than a relabelling, both in
+    # .sim_patches: the bridge never passed these to the simulator, which traced
+    # f110_gym's 1080-beam default regardless, and it derived the increment as
+    # fov / n rather than fov / (n - 1).
+    #
+    # Gym's defaults were 1080 beams over 4.7 rad, i.e. 0.00435 rad/beam, 39%
+    # coarser than the car. Everything downstream that counts points or converts
+    # an index to an angle was therefore reading a different sensor in sim than
+    # on the car: min_obs_size is 10 LiDAR points, the detector's adaptive
+    # breakpoint threshold is a function of angle_increment, and FTG's
+    # ftg_range_offset / ftg_safety_radius are in beam-index units sized for
+    # 1501. See config/SIM/sim_state_machine_overrides.yaml for what that last
+    # one did to FTG.
+    #
+    # One incidental gain: f110_gym looks its ray angles up in a 2000-step table
+    # over 2*pi, so its angular resolution is 0.00314 rad. At 1080 beams the
+    # 0.00435 rad spacing does not land on that grid and beams get quantised
+    # unevenly; at 1501 the spacing is one table step exactly.
+    scan_fov: 4.712
+    scan_beams: 1501
 
     # map parameters
     map_img_ext: '.png'
@@ -48,15 +75,19 @@ bridge:
     # RViz "Publish Point" obstacle size, as a cell radius: the painted block is
     # (2 * obstacle_size)^2 cells at 0.05 m/cell, so 4 -> 0.40 m square.
     #
-    # NOT the bridge's own default of 2 (0.20 m), because a 0.20 m obstacle is
-    # invisible to `detect` however well the LiDAR sees it. detect segments the scan
-    # and drops any cluster under min_obs_size = 10 laser points; with gym's
-    # 4.7 rad / 1080 beams = 0.00435 rad per beam, an obstacle of side w at range r
-    # spans w / (r * 0.00435) points, so 0.20 m only clears 10 points inside 4.6 m
-    # -- measured 8 points at 5.5 m, and perception published nothing at all.
-    # 0.40 m clears it out to ~9.2 m, which covers detect's max_viewing_distance of
-    # 9.0 m, while staying under max_obs_size = 0.5 m (measured size 0.385 m).
-    # One click is then enough; at 0.20 m it took a 2x2 block of clicks.
+    # NOT the bridge's own default of 2 (0.20 m). detect segments the scan and
+    # drops any cluster under min_obs_size = 10 laser points, so an obstacle of
+    # side w at range r has to clear w / (r * angle_increment) >= 10.
+    #
+    # At the 0.00314 rad/beam this file now asks for, 0.20 m reaches 10 points
+    # inside 6.4 m and 0.40 m covers the whole of detect's max_viewing_distance
+    # of 9.0 m, with room under max_obs_size = 0.5 m (measured size 0.385 m).
+    # 0.40 m is kept because it is the size that holds across the range, and one
+    # click of it is enough where 0.20 m took a 2x2 block.
+    #
+    # This was the harder constraint at gym's old 0.00435 rad/beam, where 0.20 m
+    # only cleared 10 points inside 4.6 m -- measured 8 points at 5.5 m, with
+    # perception publishing nothing at all.
     obstacle_size: 4
 
     # opponent parameters
@@ -93,13 +124,13 @@ bridge:
     # Sitting on the raceline is deliberate: off it, the opponent falls outside
     # spline_planner's obs_traj_tresh and never triggers an evasion at all.
     #
-    # ACTIVE MAP: skku_track_22x8 -- ego s = 0.0 m, opponent s = 8.0 m
-    sx: 3.3022
-    sy: -0.4889
-    stheta: -0.0039
-    sx1: 11.2862
-    sy1: -0.5337
-    stheta1: 0.0083
+    # ACTIVE MAP: skku_track_22x8_mid -- ego s = 0.0 m, opponent s = 8.0 m
+    sx: 1.7392
+    sy: -0.4479
+    stheta: -0.0023
+    sx1: 9.7382
+    sy1: -0.4979
+    stheta1: -0.0030
 
     # hangar_1905_v0 -- ego s = 0.0 m, opponent s = 12.0 m on the long straight
     # (d_left 1.70 m / d_right 0.40 m). Swap back in when launching that map.
