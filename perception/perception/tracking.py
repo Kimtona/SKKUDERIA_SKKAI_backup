@@ -338,16 +338,29 @@ class StaticDynamic(Node):
         ObstacleSD.min_nb_meas = 5
         ObstacleSD.min_std = 0.16
         ObstacleSD.max_std = 0.2
-        self.dist_deletion = 7
-        self.dist_infront = 8
+        # floats, not ints: these are declared with a DOUBLE descriptor, and an
+        # int-valued declaration makes the yaml value 7.0 a type mismatch
+        self.dist_deletion = 7.0
+        self.dist_infront = 8.0
         # slack for the FOV visibility check on unmatched tracks: beams reaching to
         # within this distance of the remembered position count as seeing that spot
         # (covers localization error + beam stopping on the ghost's own wall)
         self.fov_dist_margin = 0.4
         self.vs_reset = 0.1
-        self.aggro_multiplier = 2
+        # float, not int: an int-valued declaration makes the parameter reject
+        # `ros2 param set ... 2.5` as a type mismatch
+        self.aggro_multiplier = 2.0
         self.debug_mode = False
         self.publish_static = True
+        # whether obstacles that are still unclassified (fewer than min_nb_meas
+        # measurements, staticFlag None) reach /perception/obstacles, i.e. the
+        # planner and the state machine. True keeps the legacy behaviour: they are
+        # forwarded immediately, ~min_nb_meas/rate seconds before their
+        # static/dynamic verdict exists. False holds them back on
+        # /perception/raw_obstacles until they are classified, which drops
+        # wall-flicker blobs but also delays the reaction to a genuinely new
+        # obstacle by the same window. Measure before flipping it.
+        self.publish_unclassified = True
         self.noMemoryMode = False
 
         # ------------ Variables ------------
@@ -460,13 +473,20 @@ class StaticDynamic(Node):
                         'default' : self.vs_reset,
                         'descriptor' : ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE, floating_point_range=[FloatingPointRange(from_value=0.0, to_value=2.0, step=0.1)])},
                        {'name' : 'aggro_multi',
+                        # range used to be 0.01-0.5, which could not even express the
+                        # default of 2.0 and would only ever shrink the association
+                        # gate. This multiplies max_dist for dynamic obstacles, so 1.0
+                        # means "no widening" and is the sensible floor.
                         'default' : self.aggro_multiplier,
-                        'descriptor' : ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE, floating_point_range=[FloatingPointRange(from_value=0.01, to_value=0.5, step=0.01)])},
+                        'descriptor' : ParameterDescriptor(type=ParameterType.PARAMETER_DOUBLE, floating_point_range=[FloatingPointRange(from_value=1.0, to_value=5.0, step=0.1)])},
                        {'name' : 'debug_mode',
                         'default' : self.debug_mode,
                         'descriptor' : ParameterDescriptor(type=ParameterType.PARAMETER_BOOL)},
                        {'name' : 'publish_static',
                         'default' : self.publish_static,
+                        'descriptor' : ParameterDescriptor(type=ParameterType.PARAMETER_BOOL)},
+                       {'name' : 'publish_unclassified',
+                        'default' : self.publish_unclassified,
                         'descriptor' : ParameterDescriptor(type=ParameterType.PARAMETER_BOOL)},
                        {'name' : 'noMemoryMode',
                         'default' : self.noMemoryMode,
@@ -510,6 +530,12 @@ class StaticDynamic(Node):
             param = self.declare_parameter(
                 param_dict['name'], param_dict['default'], param_dict['descriptor'])
             params.append(param)
+        # declare_parameter returns whatever the params file / CLI supplied, but the
+        # on_set callback is only registered afterwards, so it never fires for these
+        # initial values. Without this the attributes below keep their hardcoded
+        # defaults while `ros2 param get` reports the yaml value -- the parameter
+        # looks applied and is not. Feed them through the same callback instead.
+        self.dyn_param_cb(params)
         return params
 
     def loop(self):
@@ -561,11 +587,15 @@ class StaticDynamic(Node):
             elif param_name == 'vs_reset':
                 self.vs_reset = param.value
             elif param_name == 'aggro_multi':
-                self.aggro_multi = param.value
+                # was assigning to self.aggro_multi, which nothing reads: the
+                # parameter looked live but never reached verify_position
+                self.aggro_multiplier = param.value
             elif param_name == 'debug_mode':
                 self.debug_mode = param.value
             elif param_name == 'publish_static':
                 self.publish_static = param.value
+            elif param_name == 'publish_unclassified':
+                self.publish_unclassified = param.value
             elif param_name == 'noMemoryMode':
                 self.noMemoryMode = param.value
         
@@ -574,7 +604,9 @@ class StaticDynamic(Node):
             f'[Tracking] Dynamic reconf triggered new tracking params: Tracking TTL: {Opponent_state.ttl}, Ratio to glob path: {Opponent_state.ratio_to_glob_path},\n'
             f'ObstacleSD ttl, min_nb_meas, min_std, max_std: {obstacle_params},\n'
             f'dist_deletion: {self.dist_deletion} [m], dist_infront: {self.dist_infront} [m], vs_reset: {self.vs_reset},\n'
-            f'Publish static obstacles: {self.publish_static}, no memory mode: {self.noMemoryMode}'
+            f'aggro_multi: {self.aggro_multiplier},\n'
+            f'Publish static obstacles: {self.publish_static}, publish unclassified: {self.publish_unclassified}, '
+            f'no memory mode: {self.noMemoryMode}'
               )
         
         return SetParametersResult(successful=True)
@@ -1140,8 +1172,14 @@ class StaticDynamic(Node):
             obs_msg.d_right = obs_msg.d_center-obs_msg.size/2
             obs_msg.d_left = obs_msg.d_center+obs_msg.size/2
 
-            if obs.staticFlag is None and self.publish_static:
-                obstacle_array.append(obs_msg)
+            # obstacle_array goes to /perception/obstacles, which the planner, the
+            # state machine and the controller act on. raw_opponent_array goes to
+            # /perception/raw_obstacles, which nothing in the driving path reads.
+            if obs.staticFlag is None:
+                if self.publish_static and self.publish_unclassified:
+                    obstacle_array.append(obs_msg)
+                else:
+                    raw_opponent_array.append(obs_msg)
             elif obs.staticFlag and self.publish_static:
                 obstacle_array.append(obs_msg)
             else:

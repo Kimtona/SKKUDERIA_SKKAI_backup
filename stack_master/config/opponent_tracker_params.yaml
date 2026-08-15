@@ -30,9 +30,46 @@ tracking:
     measurment_var_d: 0.002 # variance of measurement noise in d
     measurment_var_vs: 0.2
     measurment_var_vd: 0.2
+    # process_var_vs/vd and var_pub are read with .integer_value in tracking.py,
+    # so they MUST stay integers here. Writing 2.0 silently yields 0, which zeroes
+    # the process noise and makes the filter trust its motion model completely.
     process_var_vs: 2 # process velocity noise in s
     process_var_vd: 8 # process velocity noise in d
     max_dist: 0.5 # max distance for association
     var_pub: 1 # obstacles with bigger variance are not published
     measure: false
     from_bag: false
+
+    # ---- dynamically reconfigurable params ----
+    # These were previously implicit: the node fell back to the defaults hardcoded
+    # in StaticDynamic.__init__ and could not be tuned from a params file at all
+    # (declare_parameter's return value was discarded and the on_set callback was
+    # registered afterwards, so a yaml value showed up in `ros2 param get` while
+    # the code kept using its own default). That is fixed, so the values below are
+    # now the real source of truth. Every one of them is set to what the code
+    # default already was -- this block changes no behaviour, it only makes the
+    # tuning visible and editable.
+
+    # --- opponent (dynamic) track ---
+    ttl_dynamic: 40 # ticks the opponent KF survives without a match -> 40/20Hz = 2.0 s
+    ratio_to_glob_path: 0.6 # target speed as a fraction of the raceline speed, used while the opponent is unseen
+
+    # --- static / unclassified tracks ---
+    ttl_static: 3 # ticks a track survives without a match, once it counts as visible -> 0.15 s at 20 Hz
+    min_nb_meas: 5 # measurements needed before static/dynamic is decided at all
+    min_std: 0.16 # below this s/d spread a track votes "static"
+    max_std: 0.2 # above this it is certainly dynamic
+    vs_reset: 0.1 # [m/s] a dynamic track slower than this for 10+ ticks reverts to static
+
+    # --- association ---
+    aggro_multi: 2.0 # max_dist multiplier for dynamic obstacles (predicted position); 1.0 = no widening
+
+    # --- memory / visibility ---
+    dist_deletion: 7.0 # [m] only inside this s-distance can a static track have its ttl decremented
+    dist_infront: 8.0 # [m] horizon for the isInFront flag
+    noMemoryMode: false # true = never remember static obstacles (decrement ttl every tick). HMCL-UNIST run true here
+
+    # --- publishing ---
+    publish_static: true # forward static obstacles to /perception/obstacles
+    publish_unclassified: true # forward not-yet-classified blobs too; false costs min_nb_meas/rate = 0.25 s of reaction time
+    debug_mode: false
