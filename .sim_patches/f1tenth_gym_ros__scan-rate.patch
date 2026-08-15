@@ -1,0 +1,89 @@
+From 131311bfe73d8c9ffb5d0ea617894ae526413e19 Mon Sep 17 00:00:00 2001
+From: Jeongyeon Kim <jeongyeon@Jeongyeonui-MacBookAir.local>
+Date: Sat, 15 Aug 2026 17:05:30 +0900
+Subject: [PATCH] Publish the scan on its own timer
+
+Scans and odometry went out together on one 100 Hz timer, so the scan rate was
+whatever the sim stepped at. A real LiDAR is far slower -- the GL-5 this stack
+runs turns at 40 Hz -- and the difference is not cosmetic: every consumer that
+acts once per scan got 2.5 times the reaction time it will have on the car.
+
+scan_rate_hz drives a second timer for the two LaserScan topics and nothing
+else, so the physics step, the odometry and the transforms stay where they
+were. It defaults to 100.0, which reproduces the old single-timer behaviour for
+any launch that does not set it. The published scan_time field carries the
+period now, instead of the 0.0 it has always had.
+---
+ f1tenth_gym_ros/gym_bridge.py | 24 ++++++++++++++++++++++--
+ 1 file changed, 22 insertions(+), 2 deletions(-)
+
+diff --git a/f1tenth_gym_ros/gym_bridge.py b/f1tenth_gym_ros/gym_bridge.py
+index 4fb2320..96e9f8c 100644
+--- a/f1tenth_gym_ros/gym_bridge.py
++++ b/f1tenth_gym_ros/gym_bridge.py
+@@ -125,6 +125,20 @@ class GymBridge(Node):
+                 description="Cell radius painted into /map per /clicked_point obstacle"))
+         self.obstacle_size = self.get_parameter('obstacle_size').value
+ 
++        # A real LiDAR scans far slower than the sim steps. Publishing both on
++        # one 100 Hz timer hands the stack 2.5x the scans a 40 Hz sensor gives
++        # it, which flatters anything that reacts per scan. Defaults to 100.0,
++        # so a launch that does not set it keeps the single-rate behaviour.
++        # has_parameter guard for the same reason as obstacle_size above.
++        if not self.has_parameter('scan_rate_hz'):
++            self.declare_parameter('scan_rate_hz', 100.0, descriptor=ParameterDescriptor(
++                type=ParameterType.PARAMETER_DOUBLE,
++                description="Rate the LaserScan topics are published at, independent "
++                            "of the sim step and odometry rate"))
++        self.scan_rate_hz = float(self.get_parameter('scan_rate_hz').value)
++        if self.scan_rate_hz <= 0.0:
++            raise ValueError('scan_rate_hz must be positive')
++
+         # Off by default, which is upstream f1tenth_gym behaviour: the iTTC check runs
+         # on the map-only scan, so the ego drives through the opponent car with no
+         # effect on its motion -- laps still complete and nothing is logged, so a failed
+@@ -243,6 +257,9 @@ class GymBridge(Node):
+         self.drive_timer = self.create_timer(0.01, self.drive_timer_callback, callback_group=cb_group1)
+         # topic publishing timer
+         self.timer = self.create_timer(0.01, self.timer_callback, callback_group=cb_group1)
++        # scan publishing timer, separate so the sensor can run at its own rate
++        self.scan_timer = self.create_timer(
++            1.0 / self.scan_rate_hz, self.scan_timer_callback, callback_group=cb_group1)
+ 
+         # transform broadcaster
+         self.br = TransformBroadcaster(self)
+@@ -440,14 +457,15 @@ class GymBridge(Node):
+         self.ts = self.get_clock().now().to_msg()
+         self._update_sim_state()
+ 
+-    def timer_callback(self):
+-        # pub scans
++    def scan_timer_callback(self):
++        # pub scans, at scan_rate_hz rather than with the odometry below
+         scan = LaserScan()
+         scan.header.stamp = self.ts
+         scan.header.frame_id = self.ego_namespace + '/laser'
+         scan.angle_min = self.angle_min
+         scan.angle_max = self.angle_max
+         scan.angle_increment = self.angle_inc
++        scan.scan_time = 1.0 / self.scan_rate_hz
+         scan.range_min = 0.
+         scan.range_max = 30.
+         scan.ranges = self.ego_scan
+@@ -460,11 +478,13 @@ class GymBridge(Node):
+             opp_scan.angle_min = self.angle_min
+             opp_scan.angle_max = self.angle_max
+             opp_scan.angle_increment = self.angle_inc
++            opp_scan.scan_time = 1.0 / self.scan_rate_hz
+             opp_scan.range_min = 0.
+             opp_scan.range_max = 30.
+             opp_scan.ranges = self.opp_scan
+             self.opp_scan_pub.publish(opp_scan)
+ 
++    def timer_callback(self):
+         # pub tf
+         self._publish_odom(self.ts)
+         self._publish_transforms(self.ts)
+-- 
+2.50.1 (Apple Git-155)
+

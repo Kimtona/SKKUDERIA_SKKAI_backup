@@ -69,6 +69,14 @@ bridge:
     scan_fov: 4.712
     scan_beams: 1501
 
+    # The GL-5 turns at 40 Hz, and sensors.yaml carries that as pc_to_scan's
+    # scan_time 0.025. The bridge published scans from the same 100 Hz timer as
+    # the odometry, so the stack was fed 2.5 scans for every one the car gets --
+    # free reaction time for anything that acts per scan, perception and FTG
+    # included. Its own timer now, so the sim step and /car_state/odom stay at
+    # 100 Hz; see .sim_patches patch 10.
+    scan_rate_hz: 40.0
+
     # map parameters
     map_img_ext: '.png'
 
@@ -101,7 +109,7 @@ bridge:
     # 1 for time trials -- a second car parked on the raceline is just an
     # obstacle nothing reacts to, since time_trials_launch.xml starts no
     # perception. Put it back to 2 for any overtake work.
-    num_agent: 1
+    num_agent: 2
 
     # Starting poses. These are MAP-SPECIFIC and there is no guard: the bridge
     # spawns the cars at these raw map coordinates whatever `map_name` says.
@@ -124,13 +132,13 @@ bridge:
     # Sitting on the raceline is deliberate: off it, the opponent falls outside
     # spline_planner's obs_traj_tresh and never triggers an evasion at all.
     #
-    # ACTIVE MAP: skku_track_22x8_mid -- ego s = 0.0 m, opponent s = 8.0 m
-    sx: 1.7392
-    sy: -0.4479
-    stheta: -0.0023
-    sx1: 9.7382
-    sy1: -0.4979
-    stheta1: -0.0030
+    # ACTIVE MAP: skku_track_22x8_wide -- ego s = 0.0 m, opponent s = 8.0 m
+    sx: 2.1721
+    sy: -0.5842
+    stheta: -0.0750
+    sx1: 10.1576
+    sy1: -0.6087
+    stheta1: 0.0344
 
     # hangar_1905_v0 -- ego s = 0.0 m, opponent s = 12.0 m on the long straight
     # (d_left 1.70 m / d_right 0.40 m). Swap back in when launching that map.

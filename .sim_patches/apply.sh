@@ -28,6 +28,7 @@ PATCHES=(
     # half is inert until the gym half is in.
     "$GYM|f1tenth_gym__scan-model.patch|caller choose the scan model"
     "$GYM_ROS|f1tenth_gym_ros__scan-model.patch|configured scan model to the"
+    "$GYM_ROS|f1tenth_gym_ros__scan-rate.patch|scan on its own timer"
 )
 
 for entry in "${PATCHES[@]}"; do

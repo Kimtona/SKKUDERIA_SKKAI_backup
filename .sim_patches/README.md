@@ -32,6 +32,7 @@ order is a requirement rather than a convention.
 | 7 | `f1tenth_gym_ros__rviz-autofit.patch` | `f1tenth_gym_ros` | launch-time RViz config fitted to the map being launched |
 | 8 | `f1tenth_gym__scan-model.patch` | `f1tenth_gym` | `num_beams` / `fov` kwargs reach `RaceCar` instead of being ignored |
 | 9 | `f1tenth_gym_ros__scan-model.patch` | `f1tenth_gym_ros` | pass `scan_beams` / `scan_fov` to the env; `angle_increment = fov / (n - 1)` |
+| 10 | `f1tenth_gym_ros__scan-rate.patch` | `f1tenth_gym_ros` | `scan_rate_hz` — publish the scans on their own timer |
 
 Patch 6 exists because the bridge is constructed with
 `automatically_declare_parameters_from_overrides=True`: a parameter set in a params
@@ -59,6 +60,13 @@ view that was not there. `config/SIM/sim.yaml` asks for 1501 beams over
 Patch 9 also derives `angle_increment` as `fov / (n - 1)` rather than `fov / n`,
 which is the spacing `ScanSimulator2D` traces at and the one that satisfies
 `angle_min + (n-1) * angle_increment == angle_max`, as a real driver's scan does.
+
+Patch 10 finishes the sensor off. Scans went out on the same 100 Hz timer as the
+odometry, so their rate was the sim step rate; the GL-5 turns at 40 Hz, and
+anything acting once per scan was getting 2.5x its real reaction time.
+`scan_rate_hz` gives the two `LaserScan` topics their own timer and touches
+nothing else — the step, the odometry and the transforms stay at 100 Hz. It
+defaults to 100.0, i.e. the old behaviour, and `config/SIM/sim.yaml` sets 40.0.
 
 ## Usage
 
