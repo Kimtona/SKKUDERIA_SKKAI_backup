@@ -90,31 +90,42 @@ tracking:
     # again.
     #
     # Re-measured after the scan model went to 1501 beams (0.00314 rad/beam, 39%
-    # finer), which changes detection continuity directly and so invalidated the
-    # numbers above. Two valid runs per value at 0.90x, ttl 3 against ttl 10:
+    # finer) and the scan moved to its own 40 Hz timer, both of which bear on
+    # detection continuity and so invalidated the numbers above. Three valid runs
+    # per value at 0.90x, confirmed on the final state (1501 ranges, 0.0031413
+    # rad/beam, /scan at 39.3 Hz, detect still on its own 20 Hz timer):
     #
     #                        ttl=3            ttl=10
-    #   track life      0.52 +- 0.16 s   0.88 +- 0.14 s
-    #   coverage        68.8 +- 3.5 %    72.8 +- 2.1 %
-    #   transitions     83.0 +- 4.0      66.5 +- 0.5
-    #   OT entries      30.0 +- 3.0      22.0 +- 0.0
-    #   ghost tracks    0                0
-    #   laps            8.0 +- 0.0       6.5 +- 0.5
+    #   track life      0.55 +- 0.14 s   0.84 +- 0.13 s   separated
+    #   OT entries      28.7 +- 3.1      23.7 +- 2.4      separated
+    #   transitions     79.3 +- 6.1      70.7 +- 5.9      marginal
+    #   coverage        72.0 +- 5.3 %    71.9 +- 2.2 %    no difference
+    #   ghost tracks    0                0                no difference
+    #   laps            8.0 +- 0.0       6.7 +- 0.5       separated
     #
-    # The churn result holds, and coverage now separates too -- it was inside the
-    # noise on the coarser scan. Ghosts are gone at both settings: the finer scan,
-    # not the TTL, is what removed them, so the reason to keep this value low no
-    # longer exists.
+    # What this value buys is track identity: 0.55 -> 0.84 s between rebuilds, and
+    # each rebuild costs a fresh id plus min_nb_meas+1 = 6 matched cycles before the
+    # track counts as dynamic again, which resets the velocity estimate with it.
+    # Overtake flapping drops with it.
     #
-    # The cost is real and consistent: 6.5 laps against 8.0 in the same 130 s. It is
-    # not a defect. At 3 the opponent's track keeps dying, the state machine falls
-    # back to GB_TRACK and the ego runs the raceline at full speed past a car it has
-    # stopped seeing -- the extra laps are bought by the lower coverage. Revisit if
-    # lap time ever matters more than not losing the opponent.
+    # It does NOT buy coverage. Whether an obstacle is published at the opponent's
+    # true position is the same at both settings, which also means the lap cost is
+    # not paying for seeing more of the opponent -- it is the ego yielding to a
+    # track it holds onto for longer. On two runs coverage looked separated
+    # (68.8 vs 72.8); the third collapsed it. Two runs is not enough here.
     #
-    # Two runs of that sweep were discarded: the ego latched a gym collision at
-    # s = 17.75 m and both subsequent recordings are of a stationary car (0 laps,
-    # 0 OVERTAKE entries). Check the ego's s span before trusting a run.
+    # The lap cost is the most robust number in the table: 8.0 in all three runs at
+    # 3 against 6.7 at 10, a consistent 17%. Keeping 10 is a judgement that a stable
+    # opponent identity is worth that; if lap time comes first, 3 is defensible and
+    # nothing else in the table argues against it.
+    #
+    # Ghosts are zero at both settings. The finer scan removed them, not the TTL, so
+    # the original reason to keep this value short is gone either way.
+    #
+    # Two runs of an earlier sweep were discarded: the ego latched a gym collision
+    # at s = 17.75 m and both subsequent recordings are of a stationary car (0 laps,
+    # 0 OVERTAKE entries), which made ttl=20 look like the worst setting. Check the
+    # ego's s span before trusting a run.
     #
     # SIM-scoped on purpose: this was measured against gym's LiDAR, and detection
     # continuity on the real car is a different question. The shared config keeps 3.
