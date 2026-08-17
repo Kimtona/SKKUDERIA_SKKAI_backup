@@ -4,10 +4,25 @@
 push to, so changes to them live here as patch files and are applied after
 `git submodule update --init`.
 
-Both apply onto the submodule SHAs recorded on this branch (`f8f8c9d` and
-`6ffd209`), so a fresh checkout takes them cleanly:
+They apply onto the ForzaETH upstream commits `f8f8c9d` (`f1tenth_gym`) and
+`6ffd209` (`f1tenth_gym_ros`):
 
 ```bash
+./.sim_patches/apply.sh
+```
+
+`apply.sh` is safe to re-run — it skips patches already present — and it leaves
+each submodule on a local `skku/reactive-map` branch.
+
+Since `ee4b684` the superproject records the *patched* tips rather than those
+upstream SHAs, so that a clone does not silently come up with an unpatched
+simulator. Those tips only exist locally: we cannot push to ForzaETH, so
+`git submodule update --init` on a new machine cannot fetch them and will fail
+on the recorded SHA. Check the upstream SHA out by hand there and run `apply.sh`:
+
+```bash
+git -C base_system/f110_simulator/f1tenth_gym     checkout f8f8c9d
+git -C base_system/f110_simulator/f1tenth_gym_ros checkout 6ffd209
 ./.sim_patches/apply.sh
 ```
 
@@ -17,9 +32,10 @@ Placing a static obstacle by clicking **Publish Point** in RViz.
 
 These are `git am` patches, one per commit, stacked on a `skku/reactive-map` branch
 in each submodule. **Apply them in the order below** — `apply.sh` already does, and
-it is the order the commits were made in. Within `f1tenth_gym_ros` all four touch
-`gym_bridge.py`, and the last one edits a block the first one introduces, so the
-order is a requirement rather than a convention.
+it is the order the commits were made in. Five of the seven `f1tenth_gym_ros`
+patches touch `gym_bridge.py` (the other two touch `launch/gym_bridge_launch.py`),
+and `obstacle-size-param` edits a block `reactive-map` introduces, so the order is
+a requirement rather than a convention.
 
 | # | Patch | Submodule | Adds |
 |---|---|---|---|
@@ -85,18 +101,25 @@ with `ros2 param set`.
 **The bridge's own default of 2 (0.20 m) is too small to be usable**, which is why
 `config/SIM/sim.yaml` sets `obstacle_size: 4` (0.40 m). A 0.20 m obstacle is seen
 by the LiDAR and still invisible to the stack: `detect` segments the scan and drops
-any cluster below `min_obs_size` = 10 laser points. With gym's 4.7 rad over 1080
-beams = 0.00435 rad per beam, an obstacle of side `w` at range `r` spans
-`w / (r * 0.00435)` points, so
+any cluster below `min_obs_size` = 10 laser points -- `min_points` in
+`detection_core.cpp` for the C++ detector, the same gate in `detect.py` for the
+legacy one. An obstacle of side `w` at range `r` spans roughly
+`w / (r * angle_increment)` points, so the reach follows the scan model:
 
-| side | detectable out to | verdict |
+| side | reach at 0.00435 rad (1080 beams) | reach at 0.0031413 rad (1501 beams, current) |
 |---|---|---|
-| 0.20 m | 4.6 m | measured 8 points at 5.5 m; `/perception/obstacles` stayed empty |
-| 0.40 m | 9.2 m | measured size 0.385 m, detected 67-98% of cycles |
+| 0.20 m | 4.6 m | 6.4 m |
+| 0.40 m | 9.2 m | 12.7 m |
 
-0.40 m is the practical choice: it covers `detect`'s `max_viewing_distance` of
-9.0 m while staying under `max_obs_size` = 0.5 m. Before this default was raised,
-placing a usable obstacle took a 2x2 block of clicks.
+The measurements behind this were taken on the 1080-beam scan, before patches 8
+and 9: a 0.20 m obstacle gave 8 points at 5.5 m with `/perception/obstacles`
+staying empty, and a 0.40 m one fitted at 0.385 m and was detected in 67-98% of
+cycles. The finer scan only widens both margins, so they were not repeated.
+
+0.40 m is still the practical choice: at either scan model it covers `detect`'s
+`max_viewing_distance` of 9.0 m while staying under `max_obs_size` -- 0.5 m in the
+shared config, 0.7 m under `config/SIM/sim_perception_overrides.yaml`. Before this
+default was raised, placing a usable obstacle took a 2x2 block of clicks.
 
 Note that `detect` reporting nothing looks exactly like the map patch not working.
 The way to tell them apart is that the beam count drops but
@@ -136,7 +159,7 @@ Two traps when checking this by hand:
   0.05 m reports beams all over the scan. Use a threshold well above the noise, or
   restrict the comparison to beams near straight ahead.
 
-**Detection is intermittent on this machine, and it is a TF problem, not a size
+**Detection was intermittent on this machine, and it was a TF problem, not a size
 problem.** `detect` gives up on a whole cycle when it cannot transform the scan
 into `map`:
 
@@ -147,12 +170,21 @@ Could not transform between 'map' and 'car_state/laser', latest TF is 183 ms old
 
 Its fallback accepts a stale TF only within `min(0.15, 0.3 / speed)` seconds, so a
 *stationary* car gets the 150 ms bound and TF running ~180 ms behind under load is
-rejected. A steady obstacle therefore shows up in only 67-98% of cycles. That
-flicker is what stops `tracking` from accumulating `min_nb_meas` (5) measurements,
-which is in turn why its static/dynamic flag is unreliable in both directions —
-a parked obstacle has been seen published as dynamic, and a car moving at 1.5 m/s
-was never published as dynamic at all. The markers still render continuously
-because RViz keeps the last `MarkerArray`.
+rejected. A steady obstacle showed up in only 67-98% of cycles, and that flicker
+was the explanation for `tracking` failing to accumulate `min_nb_meas` (5)
+measurements — why its static/dynamic flag was unreliable in both directions, with
+a parked obstacle published as dynamic and a car moving at 1.5 m/s never published
+as dynamic at all. The markers still render continuously because RViz keeps the
+last `MarkerArray`.
+
+Those figures predate patches 8 and 9. On the 1501-beam scan a *parked* opponent
+is published at its true position in 100% of messages (verified in `19b66a1` at
+s = 8.1, d = +0.02), so intermittency is no longer the first thing to suspect. A
+*driven* opponent is a different case and still intermittent: about 72% of
+messages carry an obstacle at its true position, measured across the `ttl_static`
+sweeps. A large part of that gap was `max_obs_size` clipping the fit rather than
+TF — see `config/SIM/sim_perception_overrides.yaml`, which raises it to 0.7 for
+sim — and what remains has not been traced to a cause.
 
 ## Verified
 
