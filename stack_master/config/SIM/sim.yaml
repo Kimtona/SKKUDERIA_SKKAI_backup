@@ -109,7 +109,7 @@ bridge:
     # 1 for time trials -- a second car parked on the raceline is just an
     # obstacle nothing reacts to, since time_trials_launch.xml starts no
     # perception. Put it back to 2 for any overtake work.
-    num_agent: 2
+    num_agent: 1
 
     # Starting poses. These are MAP-SPECIFIC and there is no guard: the bridge
     # spawns the cars at these raw map coordinates whatever `map_name` says.
