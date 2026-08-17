@@ -207,9 +207,10 @@ Upstream `update_scan()` runs the iTTC collision check on the map-only scan and
 only then ray casts the other agents in, so **a car drives straight through
 another car with no effect on its motion**. In simulation that makes a failed
 overtake invisible: laps still complete, nothing is logged, and only measuring
-centre-to-centre distance reveals it. That is why the avoidance checks in
-`measure_full.py` are geometric and must stay that way — with collisions off,
-the simulator will never report a bad overtake.
+centre-to-centre distance reveals it. That is why any avoidance check has to be
+geometric — with collisions off, the simulator will never report a bad overtake.
+(The `measure_full.py` this used to name is not in this repo and is not on the
+host; treat the rule, not the file, as the thing to keep.)
 
 `agent_collisions` on the `bridge` node flips the order so the check sees the
 other agents. **Default false**, i.e. upstream behaviour, so no existing launch
