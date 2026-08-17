@@ -19,31 +19,39 @@ state_machine:
     # machine warns `FTG counter: n/120` on every cycle of the wait, so the
     # handover is in the log as well as on screen.
     #
-    # What to expect when it does fire, measured on hangar_1905_v0 (2026-08-13)
-    # with the state forced to FTGONLY:
+    # What happened the last time it fired, on hangar_1905_v0 (2026-08-13) with
+    # the state forced to FTGONLY. Read these as history, not as expectations:
+    # they were recorded on the 1080-beam scan, i.e. before 19b66a1.
     #
     #   ftg_range_offset / ftg_safety_radius   how far it got before hitting a wall
     #   375 / 100  (the real car's values)     wall at s = 33.2 m, d = 1.29 m
     #   270 /  72  (beam-count equivalents)    wall at s = 37.2 m, d = -0.89 m
     #
-    # (54.55 m lap, so neither completes one.) FTG in sim is a rescue that
-    # crashes; it is armed to be observed, not because it works yet.
+    # (54.55 m lap, so neither completed one.) FTG in sim was a rescue that
+    # crashed; it is armed to be observed, not because it is known to work.
     #
-    # The cause of that is still open: ftg_range_offset and ftg_safety_radius are
-    # in LiDAR beam-index units, and the values in
-    # controller_manager.init_ftg_controller were sized for the GL-5's 1501
-    # beams. Gym publishes 1080, so the same numbers subtend different angles:
+    # The cause is still open, but the leading suspect is gone. ftg_range_offset
+    # and ftg_safety_radius are in LiDAR beam-index units, and the values in
+    # controller_manager.init_ftg_controller were sized for the GL-5's 1501 beams
+    # over 270 deg. Gym used to publish 1080 over 4.7 rad, so the same numbers
+    # subtended different angles:
     #
-    #                      GL-5 (1501 beams)        gym (1080 beams)
+    #                      GL-5 (1501 beams)        gym, before 19b66a1 (1080)
     #   range_offset 375   trims 67.5 deg/side      trims 93.8 deg/side
     #                      -> 135.1 deg considered  -> 82.5 deg considered
     #   safety_radius 100  18.0 deg, 13.3% of the   25.0 deg, 30.3% of the
     #                      considered array         considered array
     #
-    # Rescaling by 1080/1501 (-> 270 / 72) restores the angles and helps, but is
-    # not sufficient. Those two live on the CONTROLLER node, not this one, and
-    # controller_launch.xml reads no param file at all, so overriding them for
-    # sim needs a sim/non-sim split there first.
+    # Since 19b66a1 gym publishes 1501 beams over 4.712 rad, the same scan model
+    # the parameters were sized against, so both now subtend the angles they were
+    # meant to and the rescaling to 270 / 72 is obsolete -- it would introduce the
+    # error it was compensating for. Whether FTG still drives into a wall at the
+    # car's own 375 / 100 is an open question, and one forced FTGONLY run answers
+    # it. Do that before changing either value.
+    #
+    # Overriding them for sim was never possible from this file in any case: both
+    # live on the CONTROLLER node, and controller_launch.xml reads no param file
+    # at all, so it would need a sim/non-sim split there first.
     #
     # The centring math is fine, for the record: controller/ftg.py derives
     # center_correction = n_beams / 6, and (n/2 - n/6) * (1.5*pi/n) = pi/2
